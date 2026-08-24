@@ -33,8 +33,6 @@ npm install
 # 2. 启动开发服务器
 npm run dev
 
-# 3. 构建生产版本
-npm run build
 ```
 
 打开浏览器访问终端提示的本地地址（默认 `http://localhost:5173`），即可开始录入你的第一笔资产。
