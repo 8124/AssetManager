@@ -116,7 +116,7 @@ export default function RecordsDialog({
           <DialogHeader className="px-6 py-4 border-b border-border/40">
             <div className="flex items-center justify-between">
               <div>
-                <DialogTitle className="text-base">历史记录</DialogTitle>
+                <DialogTitle className="text-base">资产记录</DialogTitle>
                 <DialogDescription>
                   共 {records.length} 条资产记录
                 </DialogDescription>

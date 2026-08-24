@@ -261,10 +261,10 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
             html += `<span style="font-size:12px">${cat}</span>`;
             html += `<span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:12px">${formatCurrencyCNY(val)}</span>`;
             html += `</div>`;
-            html += `<div style="font-size:11px;color:#8e8e93;padding-left:14px;margin-bottom:2px">占比 ${pct}%`;
+            html += `<div style="font-size:11px;color:#8e8e93;padding-left:14px;margin-bottom:2px"> ${pct}%`;
             if (growth != null) {
               const sign = growth >= 0 ? '+' : '';
-              html += ` · 增长 ${sign}${formatCurrencyCNY(Math.abs(growth))}`;
+              html += ` ·  ${sign}${formatCurrencyCNY(Math.abs(growth))}`;
               if (growthRate != null) {
                 html += `（${sign}${growthRate}%）`;
               }

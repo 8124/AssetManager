@@ -25,8 +25,8 @@ export default function OverviewSection({
 }: OverviewSectionProps) {
   const formatTotal = (val: number) => {
     return val.toLocaleString('zh-CN', {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     });
   };
 
@@ -112,9 +112,9 @@ export default function OverviewSection({
                           className={`text-xs font-medium ${
                             'subPositive' in card && card.subPositive !== undefined
                               ? card.subPositive
-                                ? 'text-[#34C759]'
+                                ? 'text-[#FF3B30]'
                                 : growthPct < 0
-                                  ? 'text-[#FF3B30]'
+                                  ? 'text-[#34C759]'
                                   : 'text-muted-foreground'
                               : 'text-muted-foreground'
                           }`}
