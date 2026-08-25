@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption, PieSeriesOption, BarSeriesOption } from 'echarts';
 import type { CallbackDataParams } from 'echarts/types/dist/shared';
@@ -79,7 +79,16 @@ function processRecordLineData(
       allCategories.add(cat);
     }
   }
-  const categories = Array.from(allCategories).sort();
+  // 计算各类别在所有日期中的汇总金额，用于排序
+  const categorySum: Record<string, number> = {};
+  for (const cat of allCategories) categorySum[cat] = 0;
+  for (const entry of filtered) {
+    for (const [cat, val] of Object.entries(entry.categories)) {
+      categorySum[cat] += val ?? 0;
+    }
+  }
+  // 按汇总金额降序：大的在前（堆叠在底部），小的在后（堆叠在顶部）
+  const categories = Array.from(allCategories).sort((a, b) => categorySum[b] - categorySum[a]);
 
   const simplified = view === 'all' && filtered.length > 20;
   const dates = filtered.map((e) => e.date);
@@ -147,6 +156,17 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
 
   const recordLine = useRecordLine();
   const [barView, setBarView] = useState<BarView>('all');
+  // 当前 hover 的具体色块（seriesName + dataIndex），为 null 表示在柱子空白处
+  const hoveredBarItemRef = useRef<{ seriesName: string; dataIndex: number } | null>(null);
+  // 离开色块后的延迟清空定时器：用于避免在相邻色块间隙处闪烁回"概览"
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
 
   // ============ 堆叠柱状图 ============
   const barOption: EChartsOption = useMemo(() => {
@@ -215,7 +235,7 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
             data: totals,
             barWidth,
             barGap: '15%',
-            itemStyle: { color: '#007AFF', borderRadius: [6, 6, 6, 6] },
+            itemStyle: { color: '#007AFF', borderRadius: 4 },
           } as BarSeriesOption,
         ],
       };
@@ -231,11 +251,11 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
       barGap: '10%',
       itemStyle: {
         color: colorMap[cat],
-        borderRadius: [6, 6, 6, 6],
+        borderRadius: 4,
         borderColor: '#ffffff',
-        borderWidth: 1,
+        borderWidth: 0.5,
       },
-      emphasis: { focus: 'series' },
+      emphasis: { focus: 'self' },
     }));
 
     return {
@@ -245,30 +265,56 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
         formatter: (params: CallbackDataParams[]) => {
           const idx = params[0].dataIndex;
           const total = totals[idx];
+          const hovered = hoveredBarItemRef.current;
+
+          // 按柱状图堆叠顺序（categories 顺序，大→小）排列，与视觉一致
+          const ordered = [...params].sort((a, b) => {
+            const ia = categories.indexOf(a.seriesName as string);
+            const ib = categories.indexOf(b.seriesName as string);
+            return ia - ib;
+          });
+
+          // 详细模式：鼠标 hover 在具体色块上，只显示该部分的金额、占比、增长
+          if (hovered && hovered.dataIndex === idx) {
+            const p = ordered.find((x) => x.seriesName === hovered.seriesName);
+            if (p) {
+              const val = Number(p.value) || 0;
+              const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0';
+              const cat = p.seriesName as string;
+              const prev = prevByCat[cat]?.[idx];
+              const growth = prev != null ? +(val - prev).toFixed(2) : null;
+              const growthRate =
+                prev != null && prev !== 0 ? +((growth! / prev) * 100).toFixed(1) : null;
+
+              let html = `<div style="font-weight:600;margin-bottom:6px">${dates[idx]}</div>`;
+              html += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">`;
+              html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0"></span>`;
+              html += `<span style="font-size:12px">${cat}</span>`;
+              html += `<span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600">${formatCurrencyCNY(val)}</span>`;
+              html += `</div>`;
+              html += `<div style="font-size:11px;color:#8e8e93;padding-left:14px">占比：${pct}%`;
+              if (growth != null) {
+                const sign = growth >= 0 ? '+' : '';
+                html += ` · 增长：${sign}${formatCurrencyCNY(Math.abs(growth))}`;
+                if (growthRate != null) {
+                  html += `（${sign}${growthRate}%）`;
+                }
+              }
+              html += `</div>`;
+              return html;
+            }
+          }
+
+          // 简化模式：不在具体色块上，仅显示日期、总金额、各部分占比
           let html = `<div style="font-weight:600;margin-bottom:4px">${dates[idx]}</div>`;
-          html += `<div style="color:#8e8e93;font-size:11px;margin-bottom:6px">总资产：${formatCurrencyCNY(total)}</div>`;
-          const sorted = [...params].sort((a, b) => Number(b.value) - Number(a.value));
-          for (const p of sorted) {
+          html += `<div style="font-size:12px;margin-bottom:6px">总资产：<span style="font-variant-numeric:tabular-nums;font-weight:600">${formatCurrencyCNY(total)}</span></div>`;
+          for (const p of ordered) {
             const val = Number(p.value) || 0;
             const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0';
-            const cat = p.seriesName as string;
-            const prev = prevByCat[cat]?.[idx];
-            const growth = prev != null ? +(val - prev).toFixed(2) : null;
-            const growthRate =
-              prev != null && prev !== 0 ? +((growth! / prev) * 100).toFixed(1) : null;
-            html += `<div style="display:flex;align-items:center;gap:6px;margin:3px 0">`;
+            html += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0">`;
             html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0"></span>`;
-            html += `<span style="font-size:12px">${cat}</span>`;
-            html += `<span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:12px">${formatCurrencyCNY(val)}</span>`;
-            html += `</div>`;
-            html += `<div style="font-size:11px;color:#8e8e93;padding-left:14px;margin-bottom:2px"> ${pct}%`;
-            if (growth != null) {
-              const sign = growth >= 0 ? '+' : '';
-              html += ` ·  ${sign}${formatCurrencyCNY(Math.abs(growth))}`;
-              if (growthRate != null) {
-                html += `（${sign}${growthRate}%）`;
-              }
-            }
+            html += `<span style="font-size:12px">${p.seriesName}</span>`;
+            html += `<span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:12px">${pct}%</span>`;
             html += `</div>`;
           }
           return html;
@@ -497,6 +543,53 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
                   theme="ud"
                   className="h-[320px] w-full"
                   notMerge
+                  onEvents={{
+                    mouseover: (
+                      params: { componentType?: string; seriesType?: string; seriesName?: string; dataIndex?: number; seriesIndex?: number },
+                      instance: { dispatchAction: (opts: unknown) => void },
+                    ) => {
+                      // 进入新色块：取消待执行的"清空"定时器，防止间隙处闪烁
+                      if (hoverTimerRef.current) {
+                        clearTimeout(hoverTimerRef.current);
+                        hoverTimerRef.current = null;
+                      }
+                      if (params.componentType === 'series' && params.seriesType === 'bar') {
+                        hoveredBarItemRef.current = {
+                          seriesName: params.seriesName!,
+                          dataIndex: params.dataIndex!,
+                        };
+                        instance?.dispatchAction({
+                          type: 'showTip',
+                          seriesIndex: params.seriesIndex,
+                          dataIndex: params.dataIndex,
+                        });
+                      }
+                    },
+                    mouseout: (
+                      params: { componentType?: string; dataIndex?: number },
+                      instance: { dispatchAction: (opts: unknown) => void },
+                    ) => {
+                      if (params.componentType === 'series') {
+                        // 延迟清空：若短时间内进入相邻色块，mouseover 会取消该定时器，
+                        // 只有鼠标真正离开柱子区域后才切回"概览"
+                        if (hoverTimerRef.current) {
+                          clearTimeout(hoverTimerRef.current);
+                        }
+                        const dataIndex = params.dataIndex;
+                        hoverTimerRef.current = setTimeout(() => {
+                          hoverTimerRef.current = null;
+                          hoveredBarItemRef.current = null;
+                          if (dataIndex != null) {
+                            instance?.dispatchAction({
+                              type: 'showTip',
+                              seriesIndex: 0,
+                              dataIndex,
+                            });
+                          }
+                        }, 120);
+                      }
+                    },
+                  }}
                 />
               )}
             </CardContent>

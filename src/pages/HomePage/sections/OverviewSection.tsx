@@ -40,9 +40,9 @@ export default function OverviewSection({
       bg: 'bg-[#007AFF]/10',
     },
     {
-      label: '资产记录更新',
+      label: '资产记录',
       value: `${recordCount}`,
-      sub: '点击查看全部',
+      sub: '估值更新',
       icon: FileText,
       accent: 'text-[#34C759]',
       bg: 'bg-[#34C759]/10',
