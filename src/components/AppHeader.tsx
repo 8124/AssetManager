@@ -117,9 +117,6 @@ export default function AppHeader({ rate, updatedAt, onFetchRate }: AppHeaderPro
             title={dirty ? '有未保存改动，点击保存（下载 JSON 副本）' : '保存（下载 JSON 副本）'}
           >
             <Download className="size-4" />
-            {dirty && (
-              <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-[#FF3B30] ring-2 ring-white" />
-            )}
           </Button>
 
           {/* 隐藏的文件输入 */}

@@ -179,7 +179,7 @@ export default function PhysicalListDialog({
                         <TableRow key={item.id}>
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-3">
-                              <ItemIcon icon={item.icon} size={32} bgColor="#007AFF15" iconColor="#007AFF" />
+                              <ItemIcon icon={item.icon} name={item.name} size={32} bgColor="#007AFF15" iconColor="#007AFF" />
                               <span className="text-sm truncate max-w-[220px]" title={item.name}>
                                 {item.name}
                               </span>

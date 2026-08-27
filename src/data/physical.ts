@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { localFileStore } from './localFileStore';
 import type { LucideIcon } from 'lucide-react';
-import { Monitor, Headphones, Smartphone, Watch, Package } from 'lucide-react';
+import { Monitor, Headphones, Smartphone, Watch, Package, Laptop, Tablet, Speaker } from 'lucide-react';
 
 export interface IPhysicalIcon {
   /** 图标类型：预设图标 / 上传图片 */
@@ -16,10 +16,47 @@ export interface IPhysicalIcon {
 
 export const PRESET_ICONS: Array<{ key: string; label: string; icon: LucideIcon }> = [
   { key: 'monitor', label: '电脑', icon: Monitor },
-  { key: 'headphones', label: '耳机', icon: Headphones },
+  { key: 'laptop', label: '笔记本', icon: Laptop },
   { key: 'smartphone', label: '手机', icon: Smartphone },
+  { key: 'tablet', label: '平板', icon: Tablet },
+  { key: 'headphones', label: '耳机', icon: Headphones },
+  { key: 'speaker', label: '音箱', icon: Speaker },
   { key: 'watch', label: '手表', icon: Watch },
 ];
+
+/**
+ * 根据实物名称推断一个合适的预设图标。
+ * 用于导入的精简 JSON（无 icon 字段）或旧数据缺失图标时兜底，
+ * 保证重新导入账本后实物仍能显示对应的图标。
+ */
+export function inferIconFromName(name: string): IPhysicalIcon | undefined {
+  const n = (name || '').toLowerCase();
+  // 笔记本 / Mac
+  if (/(笔记本|笔电|macbook|mac|laptop)/.test(n)) {
+    return { type: 'preset', presetKey: 'laptop' };
+  }
+  // 台式 / 电脑 / 主机
+  if (/(台式|电脑|主机|一体机|desktop)/.test(n)) {
+    return { type: 'preset', presetKey: 'monitor' };
+  }
+  // 手机
+  if (/(手机|iphone|phone)/.test(n)) {
+    return { type: 'preset', presetKey: 'smartphone' };
+  }
+  // 平板
+  if (/(平板|ipad|tablet|\bpad\b)/.test(n)) {
+    return { type: 'preset', presetKey: 'tablet' };
+  }
+  // 耳机 / 耳麦 / 音箱
+  if (/(耳机|耳麦|耳塞|airpods|headphone|earphone|音箱|音响|speaker)/.test(n)) {
+    return { type: 'preset', presetKey: 'headphones' };
+  }
+  // 手表 / 手环
+  if (/(手表|手环|watch|band|\bfit\b)/.test(n)) {
+    return { type: 'preset', presetKey: 'watch' };
+  }
+  return undefined;
+}
 
 export const DEFAULT_ICON_KEY = 'package';
 export const DefaultIcon = Package;

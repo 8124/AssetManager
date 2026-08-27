@@ -201,6 +201,7 @@ onClick={() => handleCardClick(item)}
 {/* 顶部圆形图标 */}
 <ItemIcon
 icon={item.icon}
+name={item.name}
 size={56}
 bgColor={bgColor}
 iconColor={iconColor}

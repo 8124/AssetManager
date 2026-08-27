@@ -10,7 +10,7 @@
  */
 
 import type { IAssetRecord, IExchangeRate, IRecordLineEntry } from './asset';
-import type { IPhysicalItem } from './physical';
+import { inferIconFromName, type IPhysicalItem, type IPhysicalIcon } from './physical';
 
 /* ============ 类型扩展 ============ */
 
@@ -163,6 +163,15 @@ function normalizeRecords(input: unknown[], rate: number): IAssetRecord[] {
     .filter((r): r is IAssetRecord => r !== null);
 }
 
+/** 校验导入的 icon 是否为合法的 IPhysicalIcon 结构 */
+function isPhysicalIcon(value: unknown): value is IPhysicalIcon {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as { type?: unknown; presetKey?: unknown; imageData?: unknown };
+  if (v.type === 'preset') return typeof v.presetKey === 'string';
+  if (v.type === 'image') return typeof v.imageData === 'string';
+  return false;
+}
+
 function normalizePhysicalItems(input: unknown[]): IPhysicalItem[] {
   if (!Array.isArray(input)) return [];
   const now = Date.now();
@@ -173,12 +182,14 @@ function normalizePhysicalItems(input: unknown[]): IPhysicalItem[] {
       const name = typeof p.name === 'string' ? p.name : `物品${idx + 1}`;
       const price = typeof p.price === 'number' ? p.price : Number(p.price) || 0;
       const purchaseDate = typeof p.purchaseDate === 'string' && p.purchaseDate ? p.purchaseDate : new Date().toISOString().slice(0, 10);
+      // 精简 JSON / 旧账本可能没有 icon 字段：优先用合法 icon，否则按名称推断兜底
+      const icon = isPhysicalIcon(p.icon) ? p.icon : inferIconFromName(name);
       return {
         id: typeof p.id === 'string' ? p.id : genId(),
         name,
         price,
         purchaseDate,
-        icon: p.icon as IPhysicalItem['icon'],
+        icon,
         createdAt: typeof p.createdAt === 'number' ? p.createdAt : now,
       } as IPhysicalItem;
     })
@@ -189,10 +200,11 @@ function normalizePhysicalItems(input: unknown[]): IPhysicalItem[] {
  * 将内部完整数据转换为精简导出格式：
  * - 输出 records 和 physical_items
  * - records 不含 currency 字段（默认人民币）
- * - id / amountCNY / createdAt / source / icon / version / 汇率 等自动生成，不写入 JSON
+ * - id / amountCNY / createdAt / source / version / 汇率 等自动生成，不写入 JSON
+ * - physical_items 保留 icon 字段（若用户设置了图标），保证导出再导入后图标不丢失
  */
 function toExportFormat(data: AppData): {
-  physical_items: Array<{ name: string; price: number; purchaseDate: string }>;
+  physical_items: Array<{ name: string; price: number; purchaseDate: string; icon?: IPhysicalIcon }>;
   records: Array<{ name: string; category: string; amount: number; date: string }>;
   recordline: IRecordLineEntry[];
 } {
@@ -201,6 +213,7 @@ function toExportFormat(data: AppData): {
       name: p.name,
       price: p.price,
       purchaseDate: p.purchaseDate,
+      ...(p.icon ? { icon: p.icon } : {}),
     })),
     records: data.asset_records.map((r) => ({
       name: r.name,
