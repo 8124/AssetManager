@@ -8,11 +8,10 @@ interface FileStoreGateProps {
 }
 
 /**
- * 文件存储门控组件（仅 Chrome / Edge）
+ * 文件存储门控组件
  *
- * 关键约束：showOpenFilePicker / showSaveFilePicker 必须在用户点击的
- * 同步上下文中调用。createLedger() / openLedgerFile() 内部第一行
- * 就同步调用 picker，因此直接在 onClick 中调用即可。
+ * 读取 JSON 账本后即可使用；数据改动保存在浏览器本地（localStorage 快照），
+ * 点右上角「保存」下载 JSON 副本，不再原地写文件。
  */
 export default function FileStoreGate({ children }: FileStoreGateProps) {
   const [ready, setReady] = useState(localFileStore.isReady());
@@ -91,7 +90,7 @@ export default function FileStoreGate({ children }: FileStoreGateProps) {
 
         <h1 className="text-2xl font-bold text-center text-foreground mb-2">资产管家</h1>
         <p className="text-sm text-center text-muted-foreground mb-8">
-          选择或创建一个账本（JSON 文件），后续打开自动加载
+          打开一个 JSON 账本即可开始；改动保存在浏览器本地，点右上角「保存」下载 JSON 副本
         </p>
 
         {/* 已有账本列表 */}
@@ -131,7 +130,7 @@ export default function FileStoreGate({ children }: FileStoreGateProps) {
         )}
 
         <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
-          {/* 新建账本 —— onClick 中直接调用，picker 是方法内第一行 */}
+          {/* 新建账本 —— 直接创建空账本（不选文件），数据存本地快照 */}
           <button
             onClick={() => {
               localFileStore
@@ -210,7 +209,7 @@ export default function FileStoreGate({ children }: FileStoreGateProps) {
         {error && <p className="mt-4 text-sm text-center text-[#FF3B30]">{error}</p>}
 
         <p className="mt-8 text-xs text-center text-muted-foreground">
-          首次选择后，账本信息自动保存，下次打开直接加载（Chrome 会请求权限，点允许即可）
+          数据会在本地自动留存，刷新不丢失；随时点右上角「保存」下载 JSON 副本（不再原地改文件，不会产生 crswap）
         </p>
       </div>
     </div>

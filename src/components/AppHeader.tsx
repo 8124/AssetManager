@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { DollarSign, RefreshCw, Upload, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,13 @@ export default function AppHeader({ rate, updatedAt, onFetchRate }: AppHeaderPro
   const [isFetching, setIsFetching] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dirty, setDirty] = useState(localFileStore.isDirty());
+
+  useEffect(() => {
+    return localFileStore.subscribe(() => {
+      setDirty(localFileStore.isDirty());
+    });
+  }, []);
 
   const handleFetchRate = async () => {
     setIsFetching(true);
@@ -53,10 +60,10 @@ export default function AppHeader({ rate, updatedAt, onFetchRate }: AppHeaderPro
     }
   };
 
-  /* ---------- 导出 JSON ---------- */
+  /* ---------- 保存（下载 JSON 副本） ---------- */
   const handleExport = () => {
-    localFileStore.exportToDownload();
-    toast.success('数据已导出为 JSON 文件');
+    const fileName = localFileStore.exportToDownload();
+    toast.success(`已保存为 JSON 文件：${fileName}`);
   };
 
   const updatedTime = format(updatedAt, 'MM-dd HH:mm', { locale: zhCN });
@@ -100,16 +107,19 @@ export default function AppHeader({ rate, updatedAt, onFetchRate }: AppHeaderPro
           </Button>
 
        
-          {/* 导出 */}
+          {/* 保存：下载 JSON 副本（走下载管理器，不产生 crswap） */}
           <Button
             size="icon"
             variant="secondary"
-            className="rounded-full"
+            className="rounded-full relative"
             onClick={handleExport}
-            aria-label="导出数据"
-            title="导出 JSON"
+            aria-label="保存为 JSON 文件"
+            title={dirty ? '有未保存改动，点击保存（下载 JSON 副本）' : '保存（下载 JSON 副本）'}
           >
             <Download className="size-4" />
+            {dirty && (
+              <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-[#FF3B30] ring-2 ring-white" />
+            )}
           </Button>
 
           {/* 隐藏的文件输入 */}

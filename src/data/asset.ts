@@ -320,3 +320,28 @@ export function computeRecordLine(records: IAssetRecord[]): IRecordLineEntry[] {
       tolamount: totalAmount,
     }));
 }
+
+/**
+ * 计算"今年平均资产"：
+ * 取当前年份每个月 recordline 中最后一条（月末快照）的资产总额，求和后
+ * 除以有数据的月份数（不足 12 个月则按实际月数除）；无本年度数据返回 null。
+ */
+export function computeYearAvgFromRecordLine(
+  recordLine: IRecordLineEntry[],
+  year = new Date().getFullYear(),
+): number | null {
+  const prefix = String(year);
+  const monthMap = new Map<string, IRecordLineEntry>();
+  for (const entry of recordLine) {
+    if (!entry.date.startsWith(prefix)) continue;
+    const month = entry.date.slice(0, 7);
+    const existing = monthMap.get(month);
+    if (!existing || entry.date > existing.date) {
+      monthMap.set(month, entry);
+    }
+  }
+  const totals = Array.from(monthMap.values()).map((e) => e.tolamount);
+  if (totals.length === 0) return null;
+  const sum = totals.reduce((s, v) => s + v, 0);
+  return +(sum / totals.length).toFixed(2);
+}

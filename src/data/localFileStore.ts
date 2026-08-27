@@ -55,9 +55,9 @@ export interface ILedgerMeta {
   lastOpenedAt: number;
 }
 
-/** 账本完整条目（含文件句柄，内部使用） */
+/** 账本完整条目（含文件句柄，内部使用；新建账本/快照账本可无句柄） */
 interface ILedgerEntry extends ILedgerMeta {
-  handle: FileSystemFileHandleLike;
+  handle?: FileSystemFileHandleLike;
 }
 
 const DATA_VERSION = 1;
@@ -76,6 +76,8 @@ const DB_NAME = 'asset-manager-db';
 const LEDGER_STORE = 'ledgers';
 const ACTIVE_LEDGER_KEY = 'active_ledger_id';
 const RATE_KEY_PREFIX = 'asset_exchange_rate_';
+/** 每个账本一份本地快照（防抖写入，刷新不丢数据；不再原地写文件，避免 crswap） */
+const SNAPSHOT_KEY_PREFIX = '__app_ledger_snapshot_';
 
 /* ============ 工具函数 ============ */
 
@@ -310,14 +312,16 @@ class LocalFileStore {
   private fileHandle: FileSystemFileHandleLike | null = null;
   private data: AppData = createEmptyData();
   private ready = false;
-  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 是否有未保存到文件的改动（用于「保存」按钮提示） */
+  private dirty = false;
   private listeners = new Set<() => void>();
   private activeLedgerId: string | null = null;
   private activeLedgerMeta: ILedgerMeta | null = null;
 
   static isSupported(): boolean {
     const w = window as WindowWithFS;
-    return typeof window !== 'undefined' && typeof w.showOpenFilePicker === 'function' && typeof w.showSaveFilePicker === 'function';
+    return typeof window !== 'undefined' && typeof w.showOpenFilePicker === 'function';
   }
 
   isSupported(): boolean {
@@ -359,20 +363,23 @@ class LocalFileStore {
   /* ---------- 自动加载（启动时恢复活跃账本） ---------- */
 
   async autoLoad(): Promise<boolean> {
-    if (!LocalFileStore.isSupported()) return false;
+    if (!LocalFileStore.isSupported()) {
+      // 非 Chrome：无法读文件，直接用本地快照（下载保存仍可用）
+      return this.tryRestoreLastSnapshot();
+    }
     try {
       const activeId = localStorage.getItem(ACTIVE_LEDGER_KEY);
-      if (!activeId) return false;
+      if (!activeId) return this.tryRestoreLastSnapshot();
       const ledger = await idbGetLedger(activeId);
-      if (!ledger) return false;
-      if (ledger.handle.requestPermission) {
-        const permission = await ledger.handle.requestPermission({ mode: 'readwrite' });
-        if (permission !== 'granted') return false;
+      if (!ledger) return this.tryRestoreLastSnapshot();
+      if (ledger.handle?.requestPermission) {
+        const permission = await ledger.handle.requestPermission({ mode: 'read' });
+        if (permission !== 'granted') return this.tryRestoreLastSnapshot();
       }
       await this.activateLedger(ledger);
       return true;
     } catch {
-      return false;
+      return this.tryRestoreLastSnapshot();
     }
   }
 
@@ -392,13 +399,41 @@ class LocalFileStore {
     this.notify();
   }
 
+  /** 快照兜底：恢复最近使用账本的本地数据（无句柄也能用） */
+  private async tryRestoreLastSnapshot(): Promise<boolean> {
+    try {
+      const activeId = localStorage.getItem(ACTIVE_LEDGER_KEY);
+      const entries = await idbGetAllLedgers();
+      const sorted = entries.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
+      let target = sorted.find((l) => l.id === activeId) ?? sorted[0];
+      if (!target) {
+        // 连账本记录都没有：尝试默认快照键
+        const raw = localStorage.getItem(SNAPSHOT_KEY_PREFIX + 'default');
+        if (!raw) return false;
+        target = {
+          id: 'default',
+          name: '上次数据',
+          fileName: '',
+          createdAt: Date.now(),
+          lastOpenedAt: Date.now(),
+        };
+        await idbPutLedger(target);
+        localStorage.setItem(ACTIVE_LEDGER_KEY, 'default');
+      }
+      await this.activateLedger(target);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /* ---------- 切换账本 ---------- */
 
   async switchLedger(id: string): Promise<void> {
     const ledger = await idbGetLedger(id);
     if (!ledger) throw new Error('账本不存在');
-    if (ledger.handle.requestPermission) {
-      const permission = await ledger.handle.requestPermission({ mode: 'readwrite' });
+    if (ledger.handle?.requestPermission) {
+      const permission = await ledger.handle.requestPermission({ mode: 'read' });
       if (permission !== 'granted') throw new Error('文件权限被拒绝');
     }
     await this.activateLedger(ledger);
@@ -407,26 +442,24 @@ class LocalFileStore {
   /* ---------- 新建账本（创建新 JSON 文件） ---------- */
 
   async createLedger(name?: string): Promise<void> {
-    const w = window as WindowWithFS;
-    if (!w.showSaveFilePicker) throw new Error('浏览器不支持，请使用 Chrome');
-    const suggestedName = name ? `${name}.json` : 'asset-data.json';
-    const handle = await w.showSaveFilePicker({ suggestedName, types: FILE_TYPES });
+    // 新建账本不再选文件/写文件：数据存本地快照，保存时下载 JSON 副本（避免 crswap）
     const ledger: ILedgerEntry = {
       id: genId(),
-      name: name || handle.name.replace(/\.json$/i, '') || '新账本',
-      fileName: handle.name,
-      handle,
+      name: name?.trim() || '新账本',
+      fileName: '',
       createdAt: Date.now(),
       lastOpenedAt: Date.now(),
     };
-    this.fileHandle = handle;
-    this.data = createEmptyData();
-    await this.writeToFile();
-    await idbPutLedger(ledger);
+    this.fileHandle = null;
     this.activeLedgerId = ledger.id;
     this.activeLedgerMeta = toMeta(ledger);
+    this.data = createEmptyData();
+    this.data.asset_exchange_rate = this.loadSavedRate();
+    await idbPutLedger(ledger);
     localStorage.setItem(ACTIVE_LEDGER_KEY, ledger.id);
+    this.dirty = false;
     this.ready = true;
+    this.saveSnapshotNow();
     this.notify();
   }
 
@@ -483,9 +516,9 @@ class LocalFileStore {
       const remaining = await idbGetAllLedgers();
       if (remaining.length > 0) {
         const next = remaining.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)[0];
-        if (next.handle.requestPermission) {
+        if (next.handle?.requestPermission) {
           try {
-            const permission = await next.handle.requestPermission({ mode: 'readwrite' });
+            const permission = await next.handle.requestPermission({ mode: 'read' });
             if (permission === 'granted') {
               await this.activateLedger(next);
               return;
@@ -512,12 +545,17 @@ class LocalFileStore {
   /* ---------- 文件读写 ---------- */
 
   private async loadFromFile(): Promise<void> {
-    if (!this.fileHandle) return;
+    if (!this.fileHandle) {
+      // 无句柄的账本（新建/快照恢复）：直接从本地快照读取
+      if (!this.restoreSnapshot()) this.data = createEmptyData();
+      this.data.asset_exchange_rate = this.loadSavedRate();
+      return;
+    }
     try {
       const file = await this.fileHandle.getFile();
       const text = await file.text();
       if (!text.trim()) {
-        this.data = createEmptyData();
+        if (!this.restoreSnapshot()) this.data = createEmptyData();
       } else {
         // parseImportJSON 同时兼容内部格式和用户精简格式（records → asset_records）
         this.data = parseImportJSON(text, DEFAULT_RATE.rate);
@@ -525,7 +563,7 @@ class LocalFileStore {
       // 汇率不写入 JSON 文件，按账本存在 localStorage
       this.data.asset_exchange_rate = this.loadSavedRate();
     } catch {
-      this.data = createEmptyData();
+      if (!this.restoreSnapshot()) this.data = createEmptyData();
       this.data.asset_exchange_rate = this.loadSavedRate();
     }
   }
@@ -551,19 +589,43 @@ class LocalFileStore {
     }
   }
 
-  private async writeToFile(): Promise<void> {
-    if (!this.fileHandle) return;
-    const writable = await this.fileHandle.createWritable();
-    // 文件始终以用户精简格式存储（physical_items + records），内部字段不写入
-    await writable.write(JSON.stringify(toExportFormat(this.data), null, 2));
-    await writable.close();
+  /* ---------- 本地快照兜底（不再原地写文件，彻底避免 crswap） ---------- */
+
+  private snapshotKey(): string {
+    return SNAPSHOT_KEY_PREFIX + (this.activeLedgerId || 'default');
   }
 
-  private scheduleSave(): void {
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      this.writeToFile().catch(() => {});
-    }, 300);
+  private saveSnapshotNow(): void {
+    try {
+      localStorage.setItem(this.snapshotKey(), JSON.stringify(this.data));
+    } catch {
+      // localStorage 满/隐私模式等异常忽略
+    }
+  }
+
+  private scheduleSnapshot(): void {
+    if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
+    this.snapshotTimer = setTimeout(() => this.saveSnapshotNow(), 300);
+  }
+
+  /** 从当前账本的本地快照恢复数据；成功返回 true */
+  private restoreSnapshot(): boolean {
+    try {
+      const raw = localStorage.getItem(this.snapshotKey());
+      if (!raw) return false;
+      const parsed = JSON.parse(raw) as AppData;
+      if (!parsed || typeof parsed !== 'object') return false;
+      this.data = { ...createEmptyData(), ...parsed };
+      this.data.asset_exchange_rate = this.loadSavedRate();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 是否有未保存到文件的改动 */
+  isDirty(): boolean {
+    return this.dirty;
   }
 
   /* ---------- 数据读写 ---------- */
@@ -578,9 +640,10 @@ class LocalFileStore {
     if (key === 'asset_exchange_rate') {
       this.saveRate(value as IExchangeRate);
     }
+    this.dirty = true;
     this.notify();
-    if (this.ready && this.fileHandle) {
-      this.scheduleSave();
+    if (this.ready) {
+      this.scheduleSnapshot();
     }
   }
 
@@ -589,29 +652,39 @@ class LocalFileStore {
   importFromJSONText(text: string): void {
     const imported = parseImportJSON(text, this.data.asset_exchange_rate.rate);
     this.data = imported;
+    this.dirty = true;
     this.notify();
-    if (this.ready && this.fileHandle) {
-      this.scheduleSave();
+    if (this.ready) {
+      this.scheduleSnapshot();
     }
   }
 
-  exportToDownload(): void {
+  /** 保存：下载 JSON 副本（走下载管理器，不产生 crswap）。返回文件名 */
+  exportToDownload(): string {
     const exported = toExportFormat(this.data);
     const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    const fileName = `${this.activeLedgerMeta?.name || 'asset-data'}-${stamp}.json`;
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${this.activeLedgerMeta?.name || 'asset-data'}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    this.dirty = false;
+    this.notify();
+    return fileName;
   }
 
   reset(): void {
     this.data = createEmptyData();
+    this.dirty = true;
     this.notify();
-    if (this.ready && this.fileHandle) this.scheduleSave();
+    if (this.ready) this.scheduleSnapshot();
   }
 }
 

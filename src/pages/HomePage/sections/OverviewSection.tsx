@@ -1,4 +1,4 @@
-import { Wallet, FileText, Clock, Plus, Download } from 'lucide-react';
+import { Wallet, FileText, Clock, CalendarRange, Plus, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -8,6 +8,8 @@ interface OverviewSectionProps {
   categoryCount: number;
   latestDate: string;
   growthPct: number;
+  /** 今年平均资产（人民币），无本年度数据时为 null */
+  yearAvg: number | null;
   onAddClick: () => void;
   onRecordsClick: () => void;
   onExportClick: () => void;
@@ -19,6 +21,7 @@ export default function OverviewSection({
   categoryCount,
   latestDate,
   growthPct,
+  yearAvg,
   onAddClick,
   onRecordsClick,
   onExportClick,
@@ -133,6 +136,40 @@ export default function OverviewSection({
               </Card>
             );
           })}
+        </div>
+
+        {/* 第二行卡片：今年平均资产 + 预留占位卡片 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mt-3 md:mt-4">
+          <Card className="border-border/40 bg-white shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1.5 min-w-0 flex-1">
+                  <p className="text-xs text-muted-foreground font-medium">今年平均资产</p>
+                  <p className="text-xl md:text-2xl font-bold text-foreground tracking-tight tabular-nums truncate">
+                    {yearAvg != null ? `¥ ${formatTotal(yearAvg)}` : '—'}
+                  </p>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {yearAvg != null ? '按每月末资产快照平均' : '暂无本年度数据'}
+                  </p>
+                </div>
+                <div className="size-10 rounded-xl bg-[#AF52DE]/10 flex items-center justify-center shrink-0 ml-3">
+                  <CalendarRange className="size-5 text-[#AF52DE]" strokeWidth={2} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-dashed border-border/60 bg-white/60 shadow-sm">
+            <CardContent className="p-5 h-full flex items-center justify-center">
+              <span className="text-sm text-muted-foreground/60">待补充</span>
+            </CardContent>
+          </Card>
+
+          <Card className="border-dashed border-border/60 bg-white/60 shadow-sm">
+            <CardContent className="p-5 h-full flex items-center justify-center">
+              <span className="text-sm text-muted-foreground/60">待补充</span>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </section>

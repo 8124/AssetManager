@@ -8,7 +8,9 @@ import RecordsDialog from './sections/RecordsDialog';
 import {
   useAssetRecords,
   useExchangeRate,
+  useRecordLine,
   deriveCategories,
+  computeYearAvgFromRecordLine,
   type IAssetRecord,
 } from '@/data/asset';
 import { exportAssetMatrixExcel } from '@/data/export';
@@ -18,6 +20,13 @@ export default function HomePage() {
   const { records, addRecord, updateRecord, deleteRecord } = useAssetRecords(rateInfo.rate);
   // 类别从记录中自动派生（去重），无需单独存储
   const categories = useMemo(() => deriveCategories(records), [records]);
+  // 按日期聚合的资产快照（用于趋势图 & 今年平均资产）
+  const recordLine = useRecordLine();
+  // 今年平均资产：取本年度每月月末快照总额的平均值
+  const yearAvg = useMemo(
+    () => computeYearAvgFromRecordLine(recordLine),
+    [recordLine],
+  );
 
   const [formOpen, setFormOpen] = useState(false);
   const [recordsOpen, setRecordsOpen] = useState(false);
@@ -108,6 +117,7 @@ export default function HomePage() {
           categoryCount={categoryCount}
           latestDate={latestDate}
           growthPct={growthPct}
+          yearAvg={yearAvg}
           onAddClick={handleAddClick}
           onRecordsClick={() => setRecordsOpen(true)}
           onExportClick={handleExport}

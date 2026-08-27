@@ -99,7 +99,7 @@ export default function LedgerSelector() {
   /* ---------- 新建账本 ---------- */
   const handleCreate = () => {
     setOpen(false);
-    // createLedger 内部第一行调用 showSaveFilePicker，必须在用户点击同步上下文
+    // createLedger 不再弹出文件选择器：直接创建空账本，数据存本地快照
     localFileStore
       .createLedger()
       .then(() => toast.success('新账本已创建'))
