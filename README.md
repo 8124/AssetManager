@@ -132,9 +132,7 @@ npm run dev
 | 样式 | Tailwind CSS v4 + CSS 变量主题 |
 | UI 组件 | shadcn/ui（Radix UI 原语） |
 | 图表 | ECharts（echarts-for-react） |
-| 动画 | framer-motion |
 | 路由 | react-router-dom v7 |
-| 表单 | react-hook-form + zod |
 | 图标 | lucide-react |
 | 提示 | sonner |
 
@@ -144,26 +142,35 @@ npm run dev
 
 ```
 src/
-├── index.tsx              # 入口（Provider + 样式引入）
-├── app.tsx                # 路由配置
-├── index.css              # 全局样式 + 主题变量
-├── components/
-│   ├── Layout.tsx         # 全局布局容器
-│   ├── AppHeader.tsx      # 顶部导航栏（含汇率入口）
-│   ├── FileStoreGate.tsx  # 本地文件存储门控
-│   ├── LedgerSelector.tsx # 账本切换器
-│   └── ui/                # shadcn/ui 组件
-├── pages/
-│   ├── HomePage/          # 资产仪表盘（首页）
-│   ├── PhysicalPage/      # 实物资产页
-│   └── NotFoundPage/      # 404
-├── data/
-│   └── asset.ts           # 资产数据模型 + Hooks + 表达式解析
+├── main.tsx                # 入口（Provider + 样式引入）
+├── app.tsx                 # 路由配置 + 全局 Toast
+├── styles/                 # 全局样式 + 主题变量
+│   ├── index.css
+│   ├── tailwind-theme.css  # Tailwind v4 主题 token
+│   └── typography.css      # 排版样式
+├── domain/                 # 纯领域模型（类型 + 纯函数，不依赖 React/存储）
+│   ├── asset.ts            # 资产模型：折算、表达式解析、类别派生、年度均值
+│   └── physical.ts         # 实物模型：持有天数、日均成本、图标推断
+├── store/
+│   └── localFileStore.ts   # 本地 JSON 文件存储（多账本 + IndexedDB 句柄）
 ├── hooks/
-│   └── use-mobile.ts      # 响应式断点 Hook
-└── lib/
-    ├── utils.ts           # 工具函数（cn 等）
-    └── chart-colors.ts    # 图表配色
+│   └── useExchangeRate.ts  # 共享汇率 Hook（顶部导航栏内部使用）
+├── components/
+│   ├── layout/             # 全局布局（AppLayout / AppHeader / TabBar）
+│   ├── shared/             # 跨功能共享组件（StatCard / DatePicker / LedgerSelector / FileStoreGate）
+│   └── ui/                 # shadcn/ui 原语（仅保留实际使用的组件）
+├── features/               # 按业务功能聚合（页面 + 组件 + Hooks）
+│   ├── assets/             # 资产仪表盘（首页）
+│   │   ├── AssetsPage.tsx
+│   │   ├── hooks.ts        # useAssetRecords / useRecordLine
+│   │   └── components/     # Overview / Charts / 表单 / 记录列表
+│   └── physical/           # 实物资产页
+│       ├── PhysicalPage.tsx
+│       ├── hooks.ts        # usePhysicalItems
+│       └── components/     # 统计 / 表单 / 列表 / 图标
+├── lib/                    # 通用工具（cn / id / format / charts）
+└── pages/
+    └── NotFoundPage.tsx    # 404
 ```
 
 ---
@@ -184,7 +191,7 @@ npm run lint:eslint  # 仅 ESLint
 
 ```typescript
 // @/ → src/
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/cn";
 
 // @shared/ → shared/
 import data from "@shared/static/config.json";

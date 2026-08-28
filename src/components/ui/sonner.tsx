@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/cn';
 import {
   CircleAlertIcon,
   CircleCheckIcon,
@@ -10,15 +10,15 @@ import {
   Loader2Icon,
   XIcon,
 } from 'lucide-react';
-import { useTheme } from 'next-themes';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
 
+/**
+ * 全局 Toast 容器：浅色主题（应用为 iOS/macOS 浅色风格）。
+ */
 function Toaster({ className, style, icons, ...props }: ToasterProps) {
-  const { theme = 'system' } = useTheme();
-
   return (
     <Sonner
-      theme={theme as ToasterProps['theme']}
+      theme="light"
       className={cn('toaster group', className)}
       position="top-center"
       icons={{
