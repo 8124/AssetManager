@@ -212,11 +212,13 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
             let html = `<div style="font-weight:600;margin-bottom:4px">${dates[idx]}</div>`;
             html += `总资产：${formatCurrencyCNY(total)}`;
             if (growth != null) {
-              const sign = growth >= 0 ? '+' : '';
-              html += `<br/>增长：${sign}${formatCurrencyCNY(Math.abs(growth))}`;
+              const sign = growth > 0 ? '+' : '';
+              const color = growth > 0 ? '#FF3B30' : growth < 0 ? '#34C759' : '#8e8e93';
+              html += `<br/><span style="color:${color};font-weight:600">增长：${sign}${formatCurrencyCNY(Math.abs(growth))}`;
               if (growthRate != null) {
                 html += `（${sign}${growthRate}%）`;
               }
+              html += `</span>`;
             }
             return html;
           },
@@ -294,20 +296,32 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
               html += `</div>`;
               html += `<div style="font-size:11px;color:#8e8e93;padding-left:14px">占比：${pct}%`;
               if (growth != null) {
-                const sign = growth >= 0 ? '+' : '';
-                html += ` · 增长：${sign}${formatCurrencyCNY(Math.abs(growth))}`;
+                const sign = growth > 0 ? '+' : '';
+                const color = growth > 0 ? '#FF3B30' : growth < 0 ? '#34C759' : '#8e8e93';
+                html += ` · <span style="color:${color};font-weight:600">增长：${sign}${formatCurrencyCNY(Math.abs(growth))}`;
                 if (growthRate != null) {
                   html += `（${sign}${growthRate}%）`;
                 }
+                html += `</span>`;
               }
               html += `</div>`;
               return html;
             }
           }
 
-          // 简化模式：不在具体色块上，仅显示日期、总金额、各部分占比
+          // 简化模式：不在具体色块上，仅显示日期、总金额、与上一根柱对比、各部分占比
           let html = `<div style="font-weight:600;margin-bottom:4px">${dates[idx]}</div>`;
-          html += `<div style="font-size:12px;margin-bottom:6px">总资产：<span style="font-variant-numeric:tabular-nums;font-weight:600">${formatCurrencyCNY(total)}</span></div>`;
+          html += `<div style="font-size:12px;margin-bottom:4px">总资产：<span style="font-variant-numeric:tabular-nums;font-weight:600">${formatCurrencyCNY(total)}</span></div>`;
+          const prevTotal = prevTotals[idx];
+          if (prevTotal != null) {
+            const diff = +(total - prevTotal).toFixed(2);
+            const sign = diff > 0 ? '+' : '';
+            const rate = prevTotal !== 0 ? ((diff / prevTotal) * 100).toFixed(1) : null;
+            const color = diff > 0 ? '#FF3B30' : diff < 0 ? '#34C759' : '#8e8e93';
+            html += `<div style="font-size:11px;color:${color};font-weight:600;margin-bottom:6px">较上次 ${sign}${formatCurrencyCNY(Math.abs(diff))}${rate != null ? `（${sign}${rate}%）` : ''}</div>`;
+          } else {
+            html += `<div style="font-size:11px;color:#8e8e93;margin-bottom:6px">首次记录，暂无对比</div>`;
+          }
           for (const p of ordered) {
             const val = Number(p.value) || 0;
             const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0';

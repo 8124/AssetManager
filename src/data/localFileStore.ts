@@ -136,6 +136,22 @@ function parseImportJSON(raw: string, rate: number): AppData {
   throw new Error('无法识别的 JSON 格式');
 }
 
+/**
+ * 解析资产记录币种（默认为人民币）：
+ * - 优先读显式 currency 字段：USD/US/美元/美金/$ → 美元；其他/缺失 → 人民币
+ * - currency 缺失时，按 category 中的"美元/USD"提示兜底（兼容旧账本用类别标记美元资产）
+ */
+function resolveCurrency(r: Record<string, unknown>): 'CNY' | 'USD' {
+  const raw = r.currency;
+  if (typeof raw === 'string' && raw.trim()) {
+    if (/^(USD|US|美元|美金|\$)$/i.test(raw.trim())) return 'USD';
+    return 'CNY';
+  }
+  const category = typeof r.category === 'string' ? r.category : '';
+  if (/(美元|USD)/i.test(category)) return 'USD';
+  return 'CNY';
+}
+
 function normalizeRecords(input: unknown[], rate: number): IAssetRecord[] {
   if (!Array.isArray(input)) return [];
   const now = Date.now();
@@ -146,7 +162,7 @@ function normalizeRecords(input: unknown[], rate: number): IAssetRecord[] {
       const name = typeof r.name === 'string' ? r.name : `资产${idx + 1}`;
       const category = typeof r.category === 'string' ? r.category : '其他';
       const amount = typeof r.amount === 'number' ? r.amount : Number(r.amount) || 0;
-      const currency = r.currency === 'USD' ? 'USD' : 'CNY';
+      const currency = resolveCurrency(r);
       const date = typeof r.date === 'string' && r.date ? r.date : new Date().toISOString().slice(0, 10);
       return {
         id: typeof r.id === 'string' ? r.id : genId(),
@@ -154,7 +170,8 @@ function normalizeRecords(input: unknown[], rate: number): IAssetRecord[] {
         category,
         amount,
         currency,
-        amountCNY: typeof r.amountCNY === 'number' ? r.amountCNY : computeAmountCNY(amount, currency, rate),
+        // 人民币金额始终按「金额 × 币种汇率」重算，不信任文件中可能过时的 amountCNY
+        amountCNY: computeAmountCNY(amount, currency, rate),
         date,
         createdAt: typeof r.createdAt === 'number' ? r.createdAt : now,
         source: (r.source as 'user' | 'mock') ?? 'user',
@@ -205,7 +222,7 @@ function normalizePhysicalItems(input: unknown[]): IPhysicalItem[] {
  */
 function toExportFormat(data: AppData): {
   physical_items: Array<{ name: string; price: number; purchaseDate: string; icon?: IPhysicalIcon }>;
-  records: Array<{ name: string; category: string; amount: number; date: string }>;
+  records: Array<{ name: string; category: string; amount: number; currency?: 'USD'; date: string }>;
   recordline: IRecordLineEntry[];
 } {
   return {
@@ -219,6 +236,8 @@ function toExportFormat(data: AppData): {
       name: r.name,
       category: r.category,
       amount: r.amount,
+      // 币种默认人民币（省略）；非人民币记录显式写入 JSON 提示，便于再导入时正确换算
+      ...(r.currency === 'USD' ? { currency: 'USD' as const } : {}),
       date: r.date,
     })),
     recordline: data.recordline,
@@ -386,7 +405,7 @@ class LocalFileStore {
       const ledger = await idbGetLedger(activeId);
       if (!ledger) return this.tryRestoreLastSnapshot();
       if (ledger.handle?.requestPermission) {
-        const permission = await ledger.handle.requestPermission({ mode: 'read' });
+        const permission = await ledger.handle.requestPermission({ mode: 'readwrite' });
         if (permission !== 'granted') return this.tryRestoreLastSnapshot();
       }
       await this.activateLedger(ledger);
@@ -446,7 +465,7 @@ class LocalFileStore {
     const ledger = await idbGetLedger(id);
     if (!ledger) throw new Error('账本不存在');
     if (ledger.handle?.requestPermission) {
-      const permission = await ledger.handle.requestPermission({ mode: 'read' });
+      const permission = await ledger.handle.requestPermission({ mode: 'readwrite' });
       if (permission !== 'granted') throw new Error('文件权限被拒绝');
     }
     await this.activateLedger(ledger);
@@ -531,7 +550,7 @@ class LocalFileStore {
         const next = remaining.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)[0];
         if (next.handle?.requestPermission) {
           try {
-            const permission = await next.handle.requestPermission({ mode: 'read' });
+            const permission = await next.handle.requestPermission({ mode: 'readwrite' });
             if (permission === 'granted') {
               await this.activateLedger(next);
               return;
@@ -618,7 +637,29 @@ class LocalFileStore {
 
   private scheduleSnapshot(): void {
     if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
-    this.snapshotTimer = setTimeout(() => this.saveSnapshotNow(), 300);
+    this.snapshotTimer = setTimeout(() => this.persist(), 300);
+  }
+
+  /**
+   * 持久化：
+   * 1. 先写本地快照（localStorage）作为兜底，刷新不丢数据
+   * 2. 若当前账本有可写的文件句柄，将数据自动写回原 JSON 文件（新增/修改/删除后即保存）
+   *    写回使用导出格式，与用户手动下载的文件结构一致
+   */
+  private async persist(): Promise<void> {
+    this.saveSnapshotNow();
+    if (!this.fileHandle || typeof this.fileHandle.createWritable !== 'function') {
+      return;
+    }
+    try {
+      const writable = await this.fileHandle.createWritable();
+      await writable.write(JSON.stringify(toExportFormat(this.data), null, 2));
+      await writable.close();
+      this.dirty = false;
+    } catch (err) {
+      // 写回文件失败（权限不足/句柄失效等）时保留本地快照，不中断使用
+      console.warn('自动保存到 JSON 文件失败，已保留本地快照', err);
+    }
   }
 
   /** 从当前账本的本地快照恢复数据；成功返回 true */

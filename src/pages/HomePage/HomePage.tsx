@@ -33,37 +33,39 @@ export default function HomePage() {
   const [editingRecord, setEditingRecord] = useState<IAssetRecord | null>(null);
 
   // 概览数据
-  const { totalCNY, categoryCount, latestDate, growthPct } = useMemo(() => {
+  const { totalCNY, latestDate, prevDate, growthPct, growthAmount } = useMemo(() => {
     const total = records.reduce((sum, r) => sum + r.amountCNY, 0);
-    const catCount = new Set(records.map((r) => r.category)).size;
-    const latest = records.length
-      ? records.reduce((l, r) => (r.date > l ? r.date : l), records[0].date)
-      : '';
 
-    // 增长率从记录计算（按日期最早/最晚的资产总值对比）
+    // 按日期排序的资产快照（与柱状图同一数据源）
+    const sortedLine = [...recordLine].sort((a, b) => a.date.localeCompare(b.date));
+    const latest = sortedLine.length
+      ? sortedLine[sortedLine.length - 1].date
+      : records.length
+        ? records.reduce((l, r) => (r.date > l ? r.date : l), records[0].date)
+        : '';
+
+    // 增长率：当前日期（最近一次快照）的总资产 相对 上一个有记录的日期的总资产
     let growth = 0;
-    const sortedDates = [...new Set(records.map((r) => r.date))].sort();
-    if (sortedDates.length >= 2) {
-      const firstDate = sortedDates[0];
-      const lastDate = sortedDates[sortedDates.length - 1];
-      const totalOn = (targetDate: string) =>
-        records
-          .filter((r) => r.date <= targetDate)
-          .reduce((sum, r) => sum + r.amountCNY, 0);
-      const firstTotal = totalOn(firstDate);
-      const lastTotal = totalOn(lastDate);
-      if (firstTotal > 0) {
-        growth = ((lastTotal - firstTotal) / firstTotal) * 100;
+    let growthAmount: number | null = null;
+    let prevDate: string | null = null;
+    if (sortedLine.length >= 2) {
+      const last = sortedLine[sortedLine.length - 1];
+      const prev = sortedLine[sortedLine.length - 2];
+      prevDate = prev.date;
+      growthAmount = +(last.tolamount - prev.tolamount).toFixed(2);
+      if (prev.tolamount > 0) {
+        growth = ((last.tolamount - prev.tolamount) / prev.tolamount) * 100;
       }
     }
 
     return {
       totalCNY: total,
-      categoryCount: catCount,
       latestDate: latest,
+      prevDate,
       growthPct: growth,
+      growthAmount,
     };
-  }, [records]);
+  }, [records, recordLine]);
 
   const handleAddClick = () => {
     setEditingRecord(null);
@@ -114,9 +116,10 @@ export default function HomePage() {
         <OverviewSection
           totalCNY={totalCNY}
           recordCount={records.length}
-          categoryCount={categoryCount}
           latestDate={latestDate}
+          prevDate={prevDate}
           growthPct={growthPct}
+          growthAmount={growthAmount}
           yearAvg={yearAvg}
           onAddClick={handleAddClick}
           onRecordsClick={() => setRecordsOpen(true)}

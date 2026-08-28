@@ -248,9 +248,15 @@ export default function AssetFormDialog({
               <div className="flex items-center justify-between">
                 <Label htmlFor="dlg-date">日期</Label>
                 {isEditing && (
-                  <span className="text-[10px] text-muted-foreground">
-                    编辑时保留原日期，修改将生成新时间点
-                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto p-0 text-xs text-[#007AFF] hover:text-[#0066CC] hover:bg-transparent"
+                    onClick={() => setDate(format(new Date(), 'yyyy-MM-dd'))}
+                  >
+                    设为今天
+                  </Button>
                 )}
               </div>
               <Input
