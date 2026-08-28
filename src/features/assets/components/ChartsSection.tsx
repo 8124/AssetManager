@@ -233,7 +233,7 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
               if (growth != null) {
                 const sign = growth > 0 ? '+' : '';
                 const color = growth > 0 ? '#FF3B30' : growth < 0 ? '#34C759' : '#8e8e93';
-                html += ` · <span style="color:${color};font-weight:600">${sign}${formatCurrencyCNY(Math.abs(growth))}`;
+                html += `&nbsp;<span style="color:${color};font-weight:600">${sign}${formatCurrencyCNY(Math.abs(growth))}`;
                 if (growthRate != null) {
                   html += `（${sign}${growthRate}%）`;
                 }
@@ -257,9 +257,16 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
           } else {
             html += `<div style="font-size:11px;color:#8e8e93;margin-bottom:6px">首次记录，暂无对比</div>`;
           }
-          for (const p of ordered) {
-            const val = Number(p.value) || 0;
-            const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0';
+          // 仅展示占比最大的前 3 个类别
+          const top3 = [...ordered]
+            .map((p) => {
+              const val = Number(p.value) || 0;
+              const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0';
+              return { p, val, pct };
+            })
+            .sort((a, b) => parseFloat(b.pct) - parseFloat(a.pct))
+            .slice(0, 3);
+          for (const { p, val, pct } of top3) {
             html += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0">`;
             html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0"></span>`;
             html += `<span style="font-size:12px">${p.seriesName}</span>`;
@@ -438,7 +445,7 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
           {/* 双层嵌套饼图 */}
           <Card className="border-border/40 bg-white shadow-sm">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">资产类别分布</CardTitle>
+              <CardTitle className="text-sm font-semibold">资产类别</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
               {records.length === 0 ? (

@@ -36,7 +36,7 @@ export default function PhysicalStatSection({
         onClick={onItemCountClick}
       />
       <StatCard
-        label="日均总和"
+        label="每日使用成本"
         value={`¥ ${formatNumber(dailyTotalCost, 1, 1)}/天`}
         icon={Clock}
         accent="text-[#FF9500]"

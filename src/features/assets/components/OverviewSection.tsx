@@ -38,9 +38,7 @@ export default function OverviewSection({
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
           <div>
             <h2 className="text-lg font-semibold text-foreground">资产总览</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              所有金额统一按人民币计价展示
-            </p>
+            
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -57,7 +55,7 @@ export default function OverviewSection({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
           {/* 总资产 */}
           <StatCard
-            label="总资产（人民币）"
+            label="总资产"
             value={`¥ ${formatTotal(totalCNY)}`}
             icon={Wallet}
             accent="text-[#007AFF]"
@@ -85,7 +83,14 @@ export default function OverviewSection({
             value={
               latestDate
                 ? growthAmount != null
-                  ? `${growthPct > 0 ? '↑' : growthPct < 0 ? '↓' : ''} ${Math.abs(growthPct).toFixed(1)}% · ${growthAmount >= 0 ? '+' : '-'}¥${formatTotal(Math.abs(growthAmount))}`
+                  ? (
+                      <>
+                        {growthAmount >= 0 ? '+' : '-'}¥{formatTotal(Math.abs(growthAmount))}
+                        <span className="ml-1.5 text-sm md:text-[15px] font-semibold opacity-70">
+                          （{Math.abs(growthPct).toFixed(1)}%）
+                        </span>
+                      </>
+                    )
                   : '—'
                 : '暂无数据'
             }

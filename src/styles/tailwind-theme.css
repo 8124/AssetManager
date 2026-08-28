@@ -59,6 +59,11 @@
     'BlinkMacSystemFont', 'Helvetica Neue', 'Tahoma', 'PingFang SC',
     'Microsoft Yahei', 'Arial', 'Hiragino Sans GB', 'sans-serif',
     'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  /* 全局默认字体：SF Pro Rounded（圆角）+ 苹方；preflight 的 html 默认字体读取该变量 */
+  --default-font-family:
+    ui-rounded, 'SF Pro Rounded', 'SF Pro Display', 'SF Pro Text',
+    -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial,
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-serif:
     'Geist', 'Geist Fallback', ui-serif, Georgia, Cambria, 'Times New Roman',
     Times, serif;
@@ -127,7 +132,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-sans: ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-mono: var(--font-mono);
   --font-serif: var(--font-serif);
 
