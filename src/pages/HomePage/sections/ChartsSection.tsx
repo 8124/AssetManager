@@ -294,11 +294,11 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
               html += `<span style="font-size:12px">${cat}</span>`;
               html += `<span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600">${formatCurrencyCNY(val)}</span>`;
               html += `</div>`;
-              html += `<div style="font-size:11px;color:#8e8e93;padding-left:14px">占比：${pct}%`;
+              html += `<div style="font-size:11px;color:#8e8e93;padding-left:14px">${pct}%`;
               if (growth != null) {
                 const sign = growth > 0 ? '+' : '';
                 const color = growth > 0 ? '#FF3B30' : growth < 0 ? '#34C759' : '#8e8e93';
-                html += ` · <span style="color:${color};font-weight:600">增长：${sign}${formatCurrencyCNY(Math.abs(growth))}`;
+                html += ` · <span style="color:${color};font-weight:600">${sign}${formatCurrencyCNY(Math.abs(growth))}`;
                 if (growthRate != null) {
                   html += `（${sign}${growthRate}%）`;
                 }
@@ -318,7 +318,7 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
             const sign = diff > 0 ? '+' : '';
             const rate = prevTotal !== 0 ? ((diff / prevTotal) * 100).toFixed(1) : null;
             const color = diff > 0 ? '#FF3B30' : diff < 0 ? '#34C759' : '#8e8e93';
-            html += `<div style="font-size:11px;color:${color};font-weight:600;margin-bottom:6px">较上次 ${sign}${formatCurrencyCNY(Math.abs(diff))}${rate != null ? `（${sign}${rate}%）` : ''}</div>`;
+            html += `<div style="font-size:11px;color:${color};font-weight:600;margin-bottom:6px"> ${sign}${formatCurrencyCNY(Math.abs(diff))}${rate != null ? `（${sign}${rate}%）` : ''}</div>`;
           } else {
             html += `<div style="font-size:11px;color:#8e8e93;margin-bottom:6px">首次记录，暂无对比</div>`;
           }

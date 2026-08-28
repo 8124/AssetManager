@@ -100,7 +100,7 @@ export default function OverviewSection({
               <Card
                 key={card.label}
                 onClick={'onClick' in card ? card.onClick : undefined}
-                className={`h-[100px] border-border/40 bg-white shadow-sm transition-all ${
+                className={`h-[120px] border-border/40 bg-white shadow-sm transition-all ${
                   'clickable' in card && card.clickable
                     ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5'
                     : ''
@@ -126,14 +126,14 @@ export default function OverviewSection({
           })}
 
           {/* 最近更新卡片：仅显示与上次更新的对比信息（较上次日期 + 幅度·金额） */}
-          <Card className="h-[100px] border-border/40 bg-white shadow-sm">
+          <Card className="h-[120px] border-border/40 bg-white shadow-sm">
             <CardContent className="p-5 h-full flex flex-col justify-center">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   {latestDate ? (
                     <>
                       <p className="text-xs font-medium text-muted-foreground">
-                        较上次 {prevDate ? formatMonthDay(prevDate) : '—'}
+                        较 {prevDate ? formatMonthDay(prevDate) : '—'}
                       </p>
                       <p
                         className={`mt-1.5 text-xl md:text-2xl font-bold tracking-tight tabular-nums truncate ${
@@ -163,7 +163,7 @@ export default function OverviewSection({
 
         {/* 第二行卡片：今年平均资产 + 预留占位卡片 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mt-3 md:mt-4">
-          <Card className="h-[100px] border-border/40 bg-white shadow-sm">
+          <Card className="h-[120px] border-border/40 bg-white shadow-sm">
             <CardContent className="p-5 h-full flex flex-col justify-center">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -179,13 +179,13 @@ export default function OverviewSection({
             </CardContent>
           </Card>
 
-          <Card className="h-[100px] border-dashed border-border/60 bg-white/60 shadow-sm">
+          <Card className="h-[120px] border-dashed border-border/60 bg-white/60 shadow-sm">
             <CardContent className="p-5 h-full flex items-center justify-center">
               <span className="text-sm text-muted-foreground/60">待补充</span>
             </CardContent>
           </Card>
 
-          <Card className="h-[100px] border-dashed border-border/60 bg-white/60 shadow-sm">
+          <Card className="h-[120px] border-dashed border-border/60 bg-white/60 shadow-sm">
             <CardContent className="p-5 h-full flex items-center justify-center">
               <span className="text-sm text-muted-foreground/60">待补充</span>
             </CardContent>
