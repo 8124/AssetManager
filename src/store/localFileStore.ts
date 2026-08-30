@@ -75,7 +75,7 @@ const DATA_VERSION = 1;
 const DEFAULT_RATE: IExchangeRate = {
   rate: 7.2,
   updatedAt: Date.now(),
-  source: 'manual',
+  source: 'auto',
 };
 
 type DataKey = keyof Omit<AppData, 'version'>;

@@ -48,11 +48,11 @@ export function StatCard({
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             {label && (
-              <p className="text-xs text-muted-foreground font-medium">{label}</p>
+              <p className="text-xs text-muted-foreground font-semibold">{label}</p>
             )}
             {value !== undefined && value !== null && (
               <p
-                className={`mt-1.5 text-xl md:text-2xl font-bold tracking-tight tabular-nums truncate ${valueClass}`}
+                className={`mt-1.5 text-2xl md:text-3xl font-extrabold tracking-tight tabular-nums truncate ${valueClass}`}
               >
                 {value}
               </p>

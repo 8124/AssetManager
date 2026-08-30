@@ -1,4 +1,3 @@
-import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -23,11 +22,9 @@ function ErrorFallback({ error, resetErrorBoundary }: { error: Error; resetError
 }
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <BrowserRouter basename={process.env.CLIENT_BASE_PATH || '/'}>
-      <ErrorBoundary FallbackComponent={ErrorFallback}>
-        <App />
-      </ErrorBoundary>
-    </BrowserRouter>
-  </StrictMode>,
+  <BrowserRouter basename={process.env.CLIENT_BASE_PATH || '/'}>
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
+      <App />
+    </ErrorBoundary>
+  </BrowserRouter>,
 );

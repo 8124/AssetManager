@@ -37,7 +37,7 @@ export default function OverviewSection({
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">资产总览</h2>
+            <h2 className="text-xl font-bold text-foreground">资产总览</h2>
             
           </div>
           <div className="flex items-center gap-2">
@@ -86,7 +86,7 @@ export default function OverviewSection({
                   ? (
                       <>
                         {growthAmount >= 0 ? '+' : '-'}¥{formatTotal(Math.abs(growthAmount))}
-                        <span className="ml-1.5 text-sm md:text-[15px] font-semibold opacity-70">
+                        <span className="ml-1.5 text-base md:text-lg font-bold opacity-70">
                           （{Math.abs(growthPct).toFixed(1)}%）
                         </span>
                       </>

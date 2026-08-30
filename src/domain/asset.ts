@@ -55,7 +55,7 @@ export const STORAGE_KEYS = {
 export const DEFAULT_RATE: IExchangeRate = {
   rate: 7.2,
   updatedAt: Date.now(),
-  source: 'manual',
+  source: 'auto',
 };
 
 /** 将原始金额按币种折算为人民币金额 */

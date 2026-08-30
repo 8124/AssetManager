@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DollarSign, RefreshCw, Download } from 'lucide-react';
+import { DollarSign, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
@@ -9,12 +9,11 @@ import { useExchangeRate } from '@/hooks/useExchangeRate';
 import LedgerSelector from '@/components/shared/LedgerSelector';
 
 /**
- * 顶部导航栏：Logo + 账本选择器 + 汇率刷新 + 保存（下载 JSON 副本）。
- * 汇率数据由内部 useExchangeRate 自行管理，页面无需传参。
+ * 顶部导航栏：Logo + 账本选择器 + 汇率显示 + 保存（下载 JSON 副本）。
+ * 汇率由 useExchangeRate 每天自动更新，此处仅展示，不提供手动刷新。
  */
 export default function AppHeader() {
-  const { rateInfo, fetchRate } = useExchangeRate();
-  const [isFetching, setIsFetching] = useState(false);
+  const { rateInfo } = useExchangeRate();
   const [dirty, setDirty] = useState(localFileStore.isDirty());
 
   useEffect(() => {
@@ -22,20 +21,6 @@ export default function AppHeader() {
       setDirty(localFileStore.isDirty());
     });
   }, []);
-
-  const handleFetchRate = async () => {
-    setIsFetching(true);
-    try {
-      const result = await fetchRate();
-      if (result) {
-        toast.success(`汇率已更新：1 USD = ${result.toFixed(4)} CNY`);
-      }
-    } catch {
-      toast.error('汇率获取失败，请检查网络');
-    } finally {
-      setIsFetching(false);
-    }
-  };
 
   /* ---------- 保存（下载 JSON 副本） ---------- */
   const handleExport = () => {
@@ -72,18 +57,6 @@ export default function AppHeader() {
             </span>
             <span className="text-[10px] text-muted-foreground">更新于 {updatedTime}</span>
           </div>
-
-          {/* 刷新汇率 */}
-          <Button
-            size="icon"
-            variant="secondary"
-            className="rounded-full"
-            onClick={handleFetchRate}
-            disabled={isFetching}
-            aria-label="刷新汇率"
-          >
-            <RefreshCw className={`size-4 ${isFetching ? 'animate-spin' : ''}`} />
-          </Button>
 
           {/* 保存：下载 JSON 副本（走下载管理器，不产生 crswap） */}
           <Button

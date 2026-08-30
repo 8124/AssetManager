@@ -134,6 +134,7 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
       const barWidth =
         dates.length > 60 ? 10 : dates.length > 40 ? 14 : dates.length > 25 ? 20 : 28;
       return {
+        animationDurationUpdate: 0,
         tooltip: {
           trigger: 'axis',
           axisPointer: { type: 'shadow' },
@@ -196,6 +197,7 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
     }));
 
     return {
+      animationDurationUpdate: 0,
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
@@ -412,6 +414,7 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
 
     return {
       color: outerColors,
+      animationDurationUpdate: 0,
       tooltip: {
         trigger: 'item',
         formatter: (params: CallbackDataParams) => {
@@ -456,11 +459,12 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
                 <div className="relative">
                   <ReactECharts
                     option={nestedPieOption}
+                    notMerge
                     className="h-[360px] w-full"
                   />
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-[11px] text-muted-foreground">总资产</span>
-                    <span className="text-lg font-bold text-foreground mt-1 tabular-nums">
+                    <span className="text-xs text-muted-foreground font-medium">总资产</span>
+                    <span className="text-xl md:text-2xl font-extrabold text-foreground mt-1 tabular-nums">
                       {totalCNY >= 10000
                         ? `${(totalCNY / 10000).toFixed(2)}万`
                         : totalCNY.toFixed(0)}
