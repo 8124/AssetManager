@@ -5,7 +5,6 @@ import {
   inferIconFromName,
   type IPhysicalIcon,
 } from '@/domain/physical';
-import { Image } from '@/components/ui/image';
 
 interface ItemIconProps {
   icon?: IPhysicalIcon;
@@ -16,7 +15,7 @@ interface ItemIconProps {
   iconColor?: string;
 }
 
-/** 渲染实物图标：预设 lucide 图标或上传图片，带圆形背景 */
+/** 渲染实物图标：预设 lucide 图标，带圆形背景 */
 export default function ItemIcon({
   icon,
   name,
@@ -24,22 +23,6 @@ export default function ItemIcon({
   bgColor = '#E5E5EA',
   iconColor = '#8E8E93',
 }: ItemIconProps) {
-  // 上传图片
-  if (icon?.type === 'image' && icon.imageData) {
-    return (
-      <div
-        className="rounded-full overflow-hidden shrink-0 flex items-center justify-center"
-        style={{ width: size, height: size, backgroundColor: bgColor }}
-      >
-        <Image
-          src={icon.imageData}
-          alt=""
-          className="w-full h-full object-cover"
-        />
-      </div>
-    );
-  }
-
   // 预设图标（优先用已存 icon；缺失时按名称推断兜底）
   let IconComp = DefaultIcon;
   const presetKey = icon?.type === 'preset' ? icon.presetKey : (name ? inferIconFromName(name)?.presetKey : undefined);

@@ -6,6 +6,7 @@ import AssetFormDialog from './components/AssetFormDialog';
 import RecordsDialog from './components/RecordsDialog';
 import {
   computeYearAvgFromRecordLine,
+  computeYearChangeFromRecordLine,
   deriveCategories,
   type IAssetRecord,
 } from '@/domain/asset';
@@ -24,6 +25,11 @@ export default function AssetsPage() {
   // 今年平均资产：取本年度每月月末快照总额的平均值
   const yearAvg = useMemo(
     () => computeYearAvgFromRecordLine(recordLine),
+    [recordLine],
+  );
+  // 今年变化：本年度最后一笔快照总额 − 本年度第一笔快照总额
+  const yearChange = useMemo(
+    () => computeYearChangeFromRecordLine(recordLine),
     [recordLine],
   );
 
@@ -123,6 +129,7 @@ export default function AssetsPage() {
           growthPct={growthPct}
           growthAmount={growthAmount}
           yearAvg={yearAvg}
+          yearChange={yearChange}
           onAddClick={handleAddClick}
           onRecordsClick={() => setRecordsOpen(true)}
         />

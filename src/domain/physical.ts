@@ -16,15 +16,16 @@ import {
   Laptop,
   Tablet,
   Speaker,
+  Bike,
+  Scooter,
+  Car,
 } from 'lucide-react';
 
 export interface IPhysicalIcon {
-  /** 图标类型：预设图标 / 上传图片 */
-  type: 'preset' | 'image';
+  /** 图标类型：预设图标 */
+  type: 'preset';
   /** 预设图标 key（type=preset 时） */
   presetKey?: string;
-  /** 上传图片 base64/dataURL（type=image 时） */
-  imageData?: string;
 }
 
 export interface IPhysicalItem {
@@ -49,6 +50,10 @@ export const PRESET_ICONS: Array<{ key: string; label: string; icon: LucideIcon 
   { key: 'headphones', label: '耳机', icon: Headphones },
   { key: 'speaker', label: '音箱', icon: Speaker },
   { key: 'watch', label: '手表', icon: Watch },
+  { key: 'display', label: '显示器', icon: Monitor },
+  { key: 'bike', label: '自行车', icon: Bike },
+  { key: 'scooter', label: '电动车', icon: Scooter },
+  { key: 'car', label: '汽车', icon: Car },
 ];
 
 export const DEFAULT_ICON_KEY = 'package';
@@ -68,6 +73,22 @@ export function inferIconFromName(name: string): IPhysicalIcon | undefined {
   // 台式 / 电脑 / 主机
   if (/(台式|电脑|主机|一体机|desktop)/.test(n)) {
     return { type: 'preset', presetKey: 'monitor' };
+  }
+  // 显示器
+  if (/(显示器|显示屏|显示|screen)/.test(n)) {
+    return { type: 'preset', presetKey: 'display' };
+  }
+  // 自行车
+  if (/(自行车|单车|山地车|公路车|bike|cycle)/.test(n)) {
+    return { type: 'preset', presetKey: 'bike' };
+  }
+  // 电动车
+  if (/(电动车|电瓶车|电动自行车|scooter)/.test(n)) {
+    return { type: 'preset', presetKey: 'scooter' };
+  }
+  // 汽车
+  if (/(汽车|轿车|机动车|car)/.test(n)) {
+    return { type: 'preset', presetKey: 'car' };
   }
   // 手机
   if (/(手机|iphone|phone)/.test(n)) {

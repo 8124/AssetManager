@@ -1,4 +1,4 @@
-import { Wallet, FileText, Clock, CalendarRange, Plus } from 'lucide-react';
+import { Wallet, FileText, Clock, CalendarRange, TrendingUp, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { StatCard } from '@/components/shared/StatCard';
@@ -15,6 +15,8 @@ interface OverviewSectionProps {
   growthAmount: number | null;
   /** 今年平均资产（人民币），无本年度数据时为 null */
   yearAvg: number | null;
+  /** 今年变化（本年度最后一笔快照总额 − 第一笔），无可比较数据时为 null */
+  yearChange: number | null;
   onAddClick: () => void;
   onRecordsClick: () => void;
 }
@@ -27,6 +29,7 @@ export default function OverviewSection({
   growthPct,
   growthAmount,
   yearAvg,
+  yearChange,
   onAddClick,
   onRecordsClick,
 }: OverviewSectionProps) {
@@ -109,7 +112,7 @@ export default function OverviewSection({
           />
         </div>
 
-        {/* 第二行：今年平均资产 + 预留占位卡片 */}
+        {/* 第二行：今年平均资产 + 今年变化 + 预留占位卡片 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mt-3 md:mt-4">
           <StatCard
             label="今年平均资产"
@@ -119,7 +122,29 @@ export default function OverviewSection({
             bg="bg-[#AF52DE]/10"
           />
 
-          {Array.from({ length: 2 }, (_, i) => (
+          {/* 今年变化：本年度最后一笔快照 − 第一笔快照 */}
+          <StatCard
+            label="今年变化"
+            value={
+              yearChange != null
+                ? `${yearChange >= 0 ? '+' : '-'}¥${formatTotal(Math.abs(yearChange))}`
+                : '—'
+            }
+            valueClass={
+              yearChange == null
+                ? 'text-xs text-muted-foreground font-normal'
+                : yearChange > 0
+                  ? 'text-[#FF3B30]'
+                  : yearChange < 0
+                    ? 'text-[#34C759]'
+                    : 'text-foreground'
+            }
+            icon={TrendingUp}
+            accent="text-[#5AC8FA]"
+            bg="bg-[#5AC8FA]/10"
+          />
+
+          {Array.from({ length: 1 }, (_, i) => (
             <Card key={i} className="h-[120px] border-dashed border-border/60 bg-white/60 shadow-sm">
               <CardContent className="p-5 h-full flex items-center justify-center">
                 <span className="text-sm text-muted-foreground/60">待补充</span>

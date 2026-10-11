@@ -153,3 +153,22 @@ export function computeYearAvgFromRecordLine(
   const sum = totals.reduce((s, v) => s + v, 0);
   return +(sum / totals.length).toFixed(2);
 }
+
+/**
+ * 计算"今年变化"：
+ * 取本年度 recordline 中按日期排序后的最后一笔 tolamount 减去第一笔 tolamount。
+ * 本年度少于 2 笔快照时返回 null（无法比较）。
+ */
+export function computeYearChangeFromRecordLine(
+  recordLine: IRecordLineEntry[],
+  year = new Date().getFullYear(),
+): number | null {
+  const prefix = String(year);
+  const entries = recordLine
+    .filter((e) => e.date.startsWith(prefix))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (entries.length < 2) return null;
+  const first = entries[0];
+  const last = entries[entries.length - 1];
+  return +(last.tolamount - first.tolamount).toFixed(2);
+}

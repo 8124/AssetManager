@@ -186,9 +186,8 @@ function normalizeRecords(input: unknown[], rate: number): IAssetRecord[] {
 /** 校验导入的 icon 是否为合法的 IPhysicalIcon 结构 */
 function isPhysicalIcon(value: unknown): value is IPhysicalIcon {
   if (!value || typeof value !== 'object') return false;
-  const v = value as { type?: unknown; presetKey?: unknown; imageData?: unknown };
+  const v = value as { type?: unknown; presetKey?: unknown };
   if (v.type === 'preset') return typeof v.presetKey === 'string';
-  if (v.type === 'image') return typeof v.imageData === 'string';
   return false;
 }
 
