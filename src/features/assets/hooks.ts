@@ -166,3 +166,37 @@ export function useRecordLine() {
 
   return recordLine;
 }
+
+/**
+ * 更新某条日期快照（直接写 recordline，与 JSON 同步）。
+ * - 日期未变：原位替换；
+ * - 日期变更：删除旧条目、按新日期插入并排序；若新日期已存在快照则抛错。
+ */
+export function updateRecordLineEntry(
+  prevDate: string,
+  next: IRecordLineEntry,
+): void {
+  const line = loadJSON<IRecordLineEntry[]>(STORAGE_KEYS.RECORD_LINE, []);
+  let nextLine: IRecordLineEntry[];
+  if (next.date === prevDate) {
+    nextLine = line.map((e) => (e.date === prevDate ? next : e));
+  } else {
+    if (line.some((e) => e.date === next.date)) {
+      throw new Error('该日期已存在快照');
+    }
+    nextLine = line
+      .filter((e) => e.date !== prevDate)
+      .concat(next)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+  saveJSON(STORAGE_KEYS.RECORD_LINE, nextLine);
+}
+
+/** 删除某条日期快照（直接写 recordline，与 JSON 同步） */
+export function deleteRecordLineEntry(date: string): void {
+  const line = loadJSON<IRecordLineEntry[]>(STORAGE_KEYS.RECORD_LINE, []);
+  saveJSON(
+    STORAGE_KEYS.RECORD_LINE,
+    line.filter((e) => e.date !== date),
+  );
+}

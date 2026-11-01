@@ -85,7 +85,84 @@ function startProcess({ name, command, args, logFileName }) {
   return child;
 }
 
+/** 检测 Ollama 是否已在运行（用 127.0.0.1 避免 localhost 解析到 IPv6） */
+function isOllamaRunning() {
+  try {
+    execSync('curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:11434/api/tags', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 杀掉所有 ollama 进程 */
+function killOllamaProcesses() {
+  try {
+    execSync('pkill -f "ollama serve"', { stdio: 'ignore' });
+    log('killed ollama serve process');
+  } catch {}
+  try {
+    execSync('pkill -f "ollama_llama_server"', { stdio: 'ignore' });
+    log('killed ollama model runner process');
+  } catch {}
+}
+
 killOrphansByPort(CLIENT_DEV_PORT);
+
+// 启动 Ollama（如果未运行）—— 单独管理，不加入 managed 列表，避免它的退出连锁触发 shutdown
+let ollamaChild = null;
+let weStartedOllama = false;
+if (!isOllamaRunning()) {
+  log('starting ollama serve...');
+  weStartedOllama = true;
+  ollamaChild = spawn('ollama', ['serve'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: false,
+    cwd: ROOT,
+    env: process.env,
+    detached: true,
+  });
+  const ollamaLogFd = fs.openSync(path.join(LOG_DIR, 'ollama.std.log'), 'a');
+  const pipeLines = (stream) => {
+    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+    rl.on('line', (line) => {
+      const msg = `[${timestamp()}] [ollama] ${line}\n`;
+      try { process.stdout.write(msg); } catch {}
+      try { fs.writeSync(ollamaLogFd, msg); } catch {}
+    });
+  };
+  pipeLines(ollamaChild.stdout);
+  pipeLines(ollamaChild.stderr);
+
+  // ollama 退出时单独处理，不触发全局 cleanup
+  ollamaChild.on('exit', (code) => {
+    if (isOllamaRunning()) {
+      // 端口还在监听，说明是因为端口冲突秒退的，本来就在跑，不算我们启动成功
+      weStartedOllama = false;
+      log('ollama serve exited (port conflict, already running externally)');
+    } else {
+      log(`ollama serve exited with code ${code}`);
+    }
+  });
+
+  // 等待就绪
+  let retries = 0;
+  const waitOllama = setInterval(() => {
+    retries++;
+    if (isOllamaRunning()) {
+      clearInterval(waitOllama);
+      log('ollama serve ready');
+    } else if (retries > 15) {
+      clearInterval(waitOllama);
+      log('ollama not ready after timeout, continuing anyway');
+    }
+  }, 500);
+} else {
+  log('ollama already running, skip starting');
+}
 
 startProcess({
   name: 'client',
@@ -108,6 +185,13 @@ function cleanup(signal) {
     for (const { child } of managed) {
       if (!child.pid) continue;
       try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    }
+    // 只杀掉我们自己启动的 ollama，不影响用户手动启动的实例
+    if (weStartedOllama && ollamaChild && ollamaChild.pid) {
+      try { process.kill(-ollamaChild.pid, 'SIGTERM'); } catch {}
+      setTimeout(() => {
+        try { process.kill(-ollamaChild.pid, 'SIGKILL'); } catch {}
+      }, 1000);
     }
     killOrphansByPort(CLIENT_DEV_PORT);
     process.exit(0);

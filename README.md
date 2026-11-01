@@ -121,6 +121,18 @@ npm run dev
 - 支持将当前账本导出为 JSON 文件备份；
 - 支持从 JSON 文件导入数据，方便换设备或共享模板。
 
+### 7. AI 账本分析（本地 Ollama）
+
+右下角悬浮按钮打开「AI 账房先生」抽屉，直接基于当前账本对话：
+
+- **完全本地推理**：默认连 `http://127.0.0.1:11434`，数据不出本机；
+- **自动适配模型**：打开抽屉时读取本机模型列表，优先选用 `kaelri/qwen3.5-mt:2b`，点击顶部模型名可切换（选择会记住）；`ollama pull` 了新模型无需改代码；
+- **给模型喂摘要，不是原始 JSON**：发送前把记录/快照压缩成结构化摘要，并预算好类别占比、集中度、区间涨跌、最大回撤、最近两期类别变化，小参数模型也能稳定引用真实数字；
+- **回答长度自适应**：默认结论 + 要点（300 字内），用户说"详细/展开"才升级为逐项拆解 + 行动清单；
+- **防幻觉约束**：账本里没有的字段（收入、支出、收益率、买卖流水）一律回答「账本里没有这项数据」，不允许用余额倒推。
+
+换服务地址（如另一台机器跑 Ollama）时设置环境变量 `VITE_OLLAMA_HOST=http://192.168.1.10:11434`。
+
 ---
 
 ## 🛠 技术栈
@@ -163,11 +175,15 @@ src/
 │   ├── assets/             # 资产仪表盘（首页）
 │   │   ├── AssetsPage.tsx
 │   │   ├── hooks.ts        # useAssetRecords / useRecordLine
-│   │   └── components/     # Overview / Charts / 表单 / 记录列表
-│   └── physical/           # 实物资产页
-│       ├── PhysicalPage.tsx
-│       ├── hooks.ts        # usePhysicalItems
-│       └── components/     # 统计 / 表单 / 列表 / 图标
+│   │   └── components/     # Overview / Charts / 表单 / 记录列表 / AiAssistant
+│   ├── physical/           # 实物资产页
+│   │   ├── PhysicalPage.tsx
+│   │   ├── hooks.ts        # usePhysicalItems
+│   │   └── components/     # 统计 / 表单 / 列表 / 图标
+│   └── ai/                 # AI 账本分析（Ollama）
+│       ├── config.ts       # 服务地址、模型自动发现与切换、请求参数
+│       ├── ledgerDigest.ts # 账本 → 模型友好的结构化摘要（含预计算指标）
+│       └── prompt.ts       # 系统提示词、分析框架、快捷提问
 ├── lib/                    # 通用工具（cn / id / format / charts）
 └── pages/
     └── NotFoundPage.tsx    # 404
@@ -192,9 +208,6 @@ npm run lint:eslint  # 仅 ESLint
 ```typescript
 // @/ → src/
 import { cn } from "@/lib/cn";
-
-// @shared/ → shared/
-import data from "@shared/static/config.json";
 ```
 
 ### 主题变量

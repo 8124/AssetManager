@@ -1,12 +1,14 @@
-import { Wallet, FileText, Clock, CalendarRange, TrendingUp, Plus } from 'lucide-react';
+import { Wallet, Shapes, Clock, CalendarRange, TrendingUp, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { StatCard } from '@/components/shared/StatCard';
 import { formatMonthDay, formatNumber } from '@/lib/format';
+import type { IRecordLineEntry } from '@/domain/asset';
+import RecordSnapshotsCard from './RecordSnapshotsCard';
 
 interface OverviewSectionProps {
   totalCNY: number;
-  recordCount: number;
+  /** 资产种类数（去重后的类别数量） */
+  categoryCount: number;
   latestDate: string;
   /** 上一次更新的日期（YYYY-MM-DD）；无可对比数据时为 null */
   prevDate: string | null;
@@ -17,19 +19,22 @@ interface OverviewSectionProps {
   yearAvg: number | null;
   /** 今年变化（本年度最后一笔快照总额 − 第一笔），无可比较数据时为 null */
   yearChange: number | null;
+  /** 按日期聚合的资产快照列表（趋势图 / 快照列表数据源） */
+  recordLine: IRecordLineEntry[];
   onAddClick: () => void;
   onRecordsClick: () => void;
 }
 
 export default function OverviewSection({
   totalCNY,
-  recordCount,
+  categoryCount,
   latestDate,
   prevDate,
   growthPct,
   growthAmount,
   yearAvg,
   yearChange,
+  recordLine,
   onAddClick,
   onRecordsClick,
 }: OverviewSectionProps) {
@@ -41,7 +46,7 @@ export default function OverviewSection({
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
           <div>
             <h2 className="text-xl font-bold text-foreground">资产总览</h2>
-            
+
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -65,11 +70,11 @@ export default function OverviewSection({
             bg="bg-[#007AFF]/10"
           />
 
-          {/* 资产记录（可点击打开记录列表） */}
+          {/* 资产种类（去重后的类别数量） */}
           <StatCard
-            label="资产记录"
-            value={`${recordCount}`}
-            icon={FileText}
+            label="资产种类"
+            value={`${categoryCount}`}
+            icon={Shapes}
             accent="text-[#34C759]"
             bg="bg-[#34C759]/10"
             clickable
@@ -112,7 +117,7 @@ export default function OverviewSection({
           />
         </div>
 
-        {/* 第二行：今年平均资产 + 今年变化 + 预留占位卡片 */}
+        {/* 第二行：今年平均资产 + 今年变化 + 日期快照列表 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mt-3 md:mt-4">
           <StatCard
             label="今年平均资产"
@@ -144,13 +149,8 @@ export default function OverviewSection({
             bg="bg-[#5AC8FA]/10"
           />
 
-          {Array.from({ length: 1 }, (_, i) => (
-            <Card key={i} className="h-[120px] border-dashed border-border/60 bg-white/60 shadow-sm">
-              <CardContent className="p-5 h-full flex items-center justify-center">
-                <span className="text-sm text-muted-foreground/60">待补充</span>
-              </CardContent>
-            </Card>
-          ))}
+          {/* 日期快照列表：条数 = recordline 条数，支持修改 / 删除对应日期数据 */}
+          <RecordSnapshotsCard recordLine={recordLine} />
         </div>
       </div>
     </section>

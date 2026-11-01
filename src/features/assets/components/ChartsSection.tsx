@@ -298,6 +298,108 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
     };
   }, [recordLine, barView]);
 
+  // ============ 资产占比趋势折线图（各类别占总资产比例随时间变化） ============
+  const shareLineOption: EChartsOption = useMemo(() => {
+    if (recordLine.length === 0) return {};
+    const sorted = [...recordLine].sort((a, b) => a.date.localeCompare(b.date));
+
+    const allCats = new Set<string>();
+    for (const e of sorted) {
+      for (const c of Object.keys(e.categories)) allCats.add(c);
+    }
+    const categories = Array.from(allCats).sort();
+    const colorMap = buildCategoryColorMap(categories);
+    const dates = sorted.map((e) => e.date);
+
+    const series = categories.map((cat) => ({
+      name: cat,
+      type: 'line' as const,
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 5,
+      data: sorted.map((e) =>
+        e.tolamount > 0
+          ? +(((e.categories[cat] ?? 0) / e.tolamount) * 100).toFixed(1)
+          : 0,
+      ),
+      lineStyle: { width: 2 },
+      itemStyle: { color: colorMap[cat] },
+      emphasis: { focus: 'series' as const },
+    }));
+
+    // 各类别占比矩阵（用于 tooltip 计算相对上一条记录的变动）
+    const pctByCat: Record<string, number[]> = {};
+    let maxPct = 0;
+    for (const s of series) {
+      pctByCat[s.name] = s.data as number[];
+      for (const v of s.data as number[]) {
+        if (v > maxPct) maxPct = v;
+      }
+    }
+    // Y 轴按最高占比自动缩放（向上取整到 5 的倍数，留 15% 头部空间）
+    const yMax = maxPct > 0 ? Math.ceil((maxPct * 1.15) / 5) * 5 : 100;
+
+    return {
+      animationDurationUpdate: 0,
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params: CallbackDataParams[]) => {
+          const idx = params[0].dataIndex;
+          // 按当前占比从高到低排列，与柱状图 tooltip 一致
+          const ordered = [...params].sort(
+            (a, b) => Number(b.value) - Number(a.value),
+          );
+          let html = `<div style="font-weight:600;margin-bottom:6px">${dates[idx]}</div>`;
+          for (const p of ordered) {
+            const cat = p.seriesName as string;
+            const cur = Number(p.value) || 0;
+            const prev = idx > 0 ? pctByCat[cat]?.[idx - 1] ?? null : null;
+            let deltaHtml: string;
+            if (prev == null) {
+              deltaHtml = `<span style="margin-left:8px;color:#8e8e93;font-size:11px">首次记录</span>`;
+            } else {
+              const delta = +(cur - prev).toFixed(1);
+              const sign = delta > 0 ? '+' : '';
+              const color =
+                delta > 0 ? '#FF3B30' : delta < 0 ? '#34C759' : '#8e8e93';
+              deltaHtml = `<span style="margin-left:8px;color:${color};font-weight:600;font-size:11px">${sign}${delta}pp</span>`;
+            }
+            html += `<div style="display:flex;align-items:center;gap:6px;margin:3px 0">`;
+            html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0"></span>`;
+            html += `<span style="font-size:12px">${cat}</span>`;
+            html += `<span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:12px;font-weight:600">${cur.toFixed(1)}%</span>`;
+            html += deltaHtml;
+            html += `</div>`;
+          }
+          return html;
+        },
+      },
+      legend: {
+        type: 'scroll',
+        bottom: 0,
+        icon: 'circle',
+        itemWidth: 10,
+        itemHeight: 10,
+        itemGap: 12,
+        textStyle: { fontSize: 11, color: 'hsl(222 18% 14%)' },
+      },
+      grid: { left: 44, right: 16, top: 16, bottom: dates.length > 10 ? 56 : 48 },
+      xAxis: {
+        type: 'category',
+        data: dates,
+        boundaryGap: false,
+        axisLabel: { fontSize: 10, rotate: dates.length > 10 ? 30 : 0 },
+      },
+      yAxis: {
+        type: 'value',
+        min: 0,
+        max: yMax,
+        axisLabel: { formatter: '{value}%' },
+      },
+      series,
+    };
+  }, [recordLine]);
+
   // ============ 双层嵌套环形饼图 ============
   const nestedPieOption: EChartsOption = useMemo(() => {
     // 外层：按类别汇总（金额降序）
@@ -561,6 +663,26 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
                       }
                     },
                   }}
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 资产占比趋势折线图 */}
+          <Card className="border-border/40 bg-white shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold">资产占比趋势</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {recordLine.length === 0 ? (
+                <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+                  暂无数据，请先添加资产记录
+                </div>
+              ) : (
+                <ReactECharts
+                  option={shareLineOption}
+                  notMerge
+                  className="h-[300px] w-full"
                 />
               )}
             </CardContent>

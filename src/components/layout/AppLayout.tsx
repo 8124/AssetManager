@@ -1,8 +1,9 @@
 import { Outlet } from 'react-router-dom';
 import { TabBar } from '@/components/layout/TabBar';
+import AiAssistant from '@/features/assets/components/AiAssistant';
 
 /**
- * 全局布局：内容区 + 底部 TabBar。
+ * 全局布局：内容区 + 底部 TabBar + AI 助手全局悬浮。
  * 顶部导航栏由各页面自行引入（AppHeader），保持页面内独立可复用。
  */
 export function AppLayout() {
@@ -12,6 +13,7 @@ export function AppLayout() {
         <Outlet />
       </div>
       <TabBar />
+      <AiAssistant />
     </div>
   );
 }

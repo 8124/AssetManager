@@ -123,13 +123,14 @@ export default function AssetsPage() {
       <main className="py-5 md:py-6">
         <OverviewSection
           totalCNY={totalCNY}
-          recordCount={records.length}
+          categoryCount={categories.length}
           latestDate={latestDate}
           prevDate={prevDate}
           growthPct={growthPct}
           growthAmount={growthAmount}
           yearAvg={yearAvg}
           yearChange={yearChange}
+          recordLine={recordLine}
           onAddClick={handleAddClick}
           onRecordsClick={() => setRecordsOpen(true)}
         />
