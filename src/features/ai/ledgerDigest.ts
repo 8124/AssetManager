@@ -57,6 +57,18 @@ export interface LedgerDigest {
   stats: LedgerStats;
 }
 
+export interface DigestOptions {
+  /**
+   * 精简模式：只保留「已算好的结论指标 + 类别占比 + 趋势特征」，
+   * 去掉逐条明细与逐期快照。
+   *
+   * 为什么需要：本机 MLX runner 实际上下文只有 4096，深度模式开思考后
+   * 思考要吃掉 2000+ token，摘要必须压到 900 token 以内正文才写得下。
+   * 代价是模型看不到单项资产列表，所以核心指标里补了"最大单项资产"。
+   */
+  compact?: boolean;
+}
+
 /* ============ 工具 ============ */
 
 function money(n: number): string {
@@ -111,8 +123,12 @@ const MAX_SNAPSHOT_ROWS = 36;
 /** 实物资产最多列出多少条 */
 const MAX_PHYSICAL_ROWS = 10;
 
-export function buildLedgerDigest(raw: RawLedger = readLedger()): LedgerDigest {
+export function buildLedgerDigest(
+  raw: RawLedger = readLedger(),
+  opts: DigestOptions = {},
+): LedgerDigest {
   const { records, recordLine, rate, physicalItems } = raw;
+  const compact = !!opts.compact;
 
   /* ---- 基础聚合 ---- */
   const totalCNY = records.reduce((s, r) => s + r.amountCNY, 0);
@@ -181,21 +197,50 @@ export function buildLedgerDigest(raw: RawLedger = readLedger()): LedgerDigest {
   /* ---- Markdown 组装 ---- */
   const lines: string[] = [];
 
-  lines.push(`### 账本数据概览`);
+  /**
+   * 核心指标区：一次把模型需要的结论性数字全部给到位。
+   * 这段存在的唯一目的是「让模型不用算」—— 缺一个数，它就会在思考里自己加半天。
+   */
+  const cnyPct = totalCNY > 0 ? (stats.cnyAmount / totalCNY) * 100 : 0;
+  lines.push(`### 核心指标（已算好，直接引用，禁止重新计算）`);
   lines.push(
-    `- 当前总资产（全部资产条目折算人民币合计）：**${money(stats.totalCNY)}**，共 ${stats.recordCount} 条资产条目、${stats.categoryCount} 个类别。`,
+    `- 总资产：**${money(stats.totalCNY)}**（${stats.recordCount} 条资产、${stats.categoryCount} 个类别）。`,
   );
-  if (firstDate) {
-    lines.push(`- 资产条目记录的日期范围：${firstDate} ~ ${lastDate}。`);
-  }
-  if (rate) {
+  if (categoryList[0]) {
     lines.push(
-      `- 美元兑人民币汇率：1 USD = ${rate.rate.toFixed(4)} CNY（${rate.source === 'auto' ? '接口自动获取' : '用户手动设置'}，更新于 ${new Date(rate.updatedAt).toLocaleString('zh-CN', { hour12: false })}）。所有美元金额均已按此汇率折算为人民币。`,
+      `- 最大类别：${stats.topCategory} ${money(categoryList[0].amount)}，占 ${pct(stats.topCategoryPct)}；前三大类别合计占 ${pct(stats.top3Pct)}。`,
     );
   }
-  if (sortedSnapshots.length > 0) {
+  // 精简模式下不列明细，必须在这里给出"最大单项资产"，否则模型无从回答"我最大的持仓是什么"
+  if (compact) {
+    const biggest = records.reduce<IAssetRecord | null>(
+      (a, b) => (!a || b.amountCNY > a.amountCNY ? b : a),
+      null,
+    );
+    if (biggest) {
+      lines.push(
+        `- 最大单项资产：${biggest.name || '未命名'}（${biggest.category || '未分类'}）${money(biggest.amountCNY)}，占 ${pct(stats.totalCNY > 0 ? (biggest.amountCNY / stats.totalCNY) * 100 : 0)}。`,
+      );
+    }
+  }
+  lines.push(
+    `- 币种：人民币 ${money(stats.cnyAmount)}（${pct(cnyPct)}）；美元 $${stats.usdAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ≈ ${money(stats.usdAmountCNY)}（占 ${pct(stats.usdPct)}）。`,
+  );
+  if (rate) {
     lines.push(
-      `- 历史日期快照共 ${stats.snapshotCount} 个，最新快照日期 ${latestSnapshot.date}，总额 ${money(latestSnapshot.tolamount)}。`,
+      `- 汇率：1 USD = ${rate.rate.toFixed(4)} CNY（${rate.source === 'auto' ? '接口自动获取' : '用户手动设置'}，${new Date(rate.updatedAt).toLocaleString('zh-CN', { hour12: false })}），所有美元金额已按此折算。`,
+    );
+  }
+  if (firstDate) {
+    lines.push(`- 资产条目日期范围：${firstDate} ~ ${lastDate}。`);
+  }
+  if (latestSnapshot) {
+    const latestDelta =
+      stats.latestChange !== null && stats.latestChangePct !== null
+        ? `，较上一期 ${signedMoney(stats.latestChange)}（${stats.latestChangePct >= 0 ? '+' : ''}${stats.latestChangePct.toFixed(1)}%）`
+        : '';
+    lines.push(
+      `- 最新快照：${latestSnapshot.date} ${money(latestSnapshot.tolamount)}${latestDelta}（共 ${stats.snapshotCount} 期快照）。`,
     );
   }
 
@@ -206,30 +251,23 @@ export function buildLedgerDigest(raw: RawLedger = readLedger()): LedgerDigest {
     return { markdown: lines.join('\n'), stats };
   }
 
-  /* 类别分布 */
+  /* 类别分布（币种与集中度已在核心指标里，不重复列） */
   if (categoryList.length > 0) {
     lines.push('');
-    lines.push('### 资产类别分布（按折算人民币金额降序）');
-    for (const c of categoryList) {
-      lines.push(`- ${c.category}：${money(c.amount)}，占比 ${pct(c.share)}，${c.count} 条`);
+    if (compact) {
+      lines.push(
+        `### 类别占比\n${categoryList.map((c) => `${c.category} ${pct(c.share)}`).join('、')}`,
+      );
+    } else {
+      lines.push('### 资产类别分布（按折算人民币金额降序）');
+      for (const c of categoryList) {
+        lines.push(`- ${c.category}：${money(c.amount)}，占比 ${pct(c.share)}，${c.count} 条`);
+      }
     }
-    lines.push(
-      `- 集中度参考：最大类别「${stats.topCategory}」占 ${pct(stats.topCategoryPct)}，前三大类别合计占 ${pct(stats.top3Pct)}。`,
-    );
   }
 
-  /* 币种分布 */
-  lines.push('');
-  lines.push('### 币种构成');
-  lines.push(
-    `- 人民币资产：${money(stats.cnyAmount)}（${pct(totalCNY > 0 ? (stats.cnyAmount / totalCNY) * 100 : 0)}）`,
-  );
-  lines.push(
-    `- 美元资产：$${stats.usdAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}，折合 ${money(stats.usdAmountCNY)}（${pct(stats.usdPct)}）`,
-  );
-
-  /* 明细 */
-  if (records.length > 0) {
+  /* 明细（精简模式省略，deep 模式的思考预算需要留空间） */
+  if (!compact && records.length > 0) {
     const sortedRecords = [...records].sort((a, b) => b.amountCNY - a.amountCNY);
     const shown = sortedRecords.slice(0, MAX_DETAIL_ROWS);
     lines.push('');
@@ -266,33 +304,36 @@ export function buildLedgerDigest(raw: RawLedger = readLedger()): LedgerDigest {
   /* 快照趋势 */
   if (sortedSnapshots.length > 0) {
     const sampled = downsample(sortedSnapshots, MAX_SNAPSHOT_ROWS);
-    lines.push('');
-    lines.push(
-      `### 历史日期快照（总资产趋势${sortedSnapshots.length > sampled.length ? `，共 ${sortedSnapshots.length} 个时间点、已等距抽样 ${sampled.length} 个` : ''}）`,
-    );
-    sampled.forEach((s, i) => {
-      const prev = i === 0 ? null : sampled[i - 1];
-      let deltaText = '';
-      if (prev && prev.date !== s.date) {
-        const diff = s.tolamount - prev.tolamount;
-        const ratio = prev.tolamount > 0 ? (diff / prev.tolamount) * 100 : 0;
-        deltaText = `（较上一快照 ${signedMoney(diff)}，${ratio >= 0 ? '+' : ''}${ratio.toFixed(1)}%）`;
-      }
-      lines.push(`- ${s.date}：${money(s.tolamount)}${deltaText}`);
-    });
+    // 精简模式不列逐期清单与类别构成，只保留下面的"趋势特征"（结论已算好）
+    if (!compact) {
+      lines.push('');
+      lines.push(
+        `### 历史日期快照（总资产趋势${sortedSnapshots.length > sampled.length ? `，共 ${sortedSnapshots.length} 个时间点、已等距抽样 ${sampled.length} 个` : ''}）`,
+      );
+      sampled.forEach((s, i) => {
+        const prev = i === 0 ? null : sampled[i - 1];
+        let deltaText = '';
+        if (prev && prev.date !== s.date) {
+          const diff = s.tolamount - prev.tolamount;
+          const ratio = prev.tolamount > 0 ? (diff / prev.tolamount) * 100 : 0;
+          deltaText = `（较上一快照 ${signedMoney(diff)}，${ratio >= 0 ? '+' : ''}${ratio.toFixed(1)}%）`;
+        }
+        lines.push(`- ${s.date}：${money(s.tolamount)}${deltaText}`);
+      });
 
-    // 最新快照的类别构成，便于回答"最近一次的结构如何"
-    if (latestSnapshot) {
-      const cats = Object.entries(latestSnapshot.categories)
-        .filter(([, v]) => v > 0)
-        .sort((a, b) => b[1] - a[1]);
-      if (cats.length > 0) {
-        const total = latestSnapshot.tolamount || cats.reduce((s, [, v]) => s + v, 0);
-        lines.push(
-          `- 最新快照（${latestSnapshot.date}）类别构成：${cats
-            .map(([k, v]) => `${k} ${money(v)}（${pct(total > 0 ? (v / total) * 100 : 0)}）`)
-            .join('、')}`,
-        );
+      // 最新快照的类别构成，便于回答"最近一次的结构如何"
+      if (latestSnapshot) {
+        const cats = Object.entries(latestSnapshot.categories)
+          .filter(([, v]) => v > 0)
+          .sort((a, b) => b[1] - a[1]);
+        if (cats.length > 0) {
+          const total = latestSnapshot.tolamount || cats.reduce((s, [, v]) => s + v, 0);
+          lines.push(
+            `- 最新快照（${latestSnapshot.date}）类别构成：${cats
+              .map(([k, v]) => `${k} ${money(v)}（${pct(total > 0 ? (v / total) * 100 : 0)}）`)
+              .join('、')}`,
+          );
+        }
       }
     }
 
@@ -370,7 +411,7 @@ export function buildLedgerDigest(raw: RawLedger = readLedger()): LedgerDigest {
   /* 实物资产 */
   if (physicalItems.length > 0) {
     const sortedItems = [...physicalItems].sort((a, b) => (b.price || 0) - (a.price || 0));
-    const shown = sortedItems.slice(0, MAX_PHYSICAL_ROWS);
+    const shown = compact ? [] : sortedItems.slice(0, MAX_PHYSICAL_ROWS);
     lines.push('');
     lines.push(
       `### 实物资产（另一份清单，不计入上面的总资产；共 ${stats.physicalCount} 件，合计 ${money(stats.physicalTotal)}）`,
@@ -378,7 +419,7 @@ export function buildLedgerDigest(raw: RawLedger = readLedger()): LedgerDigest {
     for (const p of shown) {
       lines.push(`- ${p.name}：${money(p.price || 0)}，购于 ${p.purchaseDate}`);
     }
-    if (sortedItems.length > shown.length) {
+    if (!compact && sortedItems.length > shown.length) {
       lines.push(`- 其余 ${sortedItems.length - shown.length} 件未列出。`);
     }
   }

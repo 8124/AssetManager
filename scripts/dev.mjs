@@ -16,6 +16,7 @@ process.chdir(ROOT);
 
 const LOG_DIR = process.env.LOG_DIR || 'logs';
 const CLIENT_DEV_PORT = process.env.CLIENT_DEV_PORT || '8001';
+const OLLAMA_PORT = process.env.OLLAMA_PORT || '11434';
 
 fs.mkdirSync(LOG_DIR, { recursive: true });
 
@@ -85,14 +86,36 @@ function startProcess({ name, command, args, logFileName }) {
   return child;
 }
 
-/** 检测 Ollama 是否已在运行（用 127.0.0.1 避免 localhost 解析到 IPv6） */
+/**
+ * 判断 11434 端口是否已被监听。
+ *
+ * 不要用 `curl /api/tags` 判活：Ollama 正在加载模型/内存紧张时接口会阻塞几秒，
+ * 2 秒超时的 curl 会误判成「没启动」，于是这里又起一个 serve → 绑定失败 →
+ * 打印 "ollama not ready after timeout"。用 lsof 看端口只依赖内核，不会误判。
+ */
 function isOllamaRunning() {
   try {
-    execSync('curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:11434/api/tags', {
+    const out = execSync(`lsof -ti:${OLLAMA_PORT}`, {
       stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 2000,
-    });
-    return true;
+    })
+      .toString()
+      .trim();
+    return out.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** 端口在监听 ≠ 接口已就绪：额外做一次短超时确认，仅用于日志，不阻塞启动 */
+function isOllamaApiReady() {
+  try {
+    const code = execSync(
+      `curl -s -m 3 -o /dev/null -w "%{http_code}" http://127.0.0.1:${OLLAMA_PORT}/api/tags`,
+      { stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 },
+    )
+      .toString()
+      .trim();
+    return code === '200';
   } catch {
     return false;
   }
@@ -122,7 +145,9 @@ if (!isOllamaRunning()) {
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: false,
     cwd: ROOT,
-    env: process.env,
+    // 默认上下文只有 4096，思考型模型"想完就没地方写答案"。
+    // 由这里启动时顺手提到 8192；若 Ollama.app 已在跑则此设置不生效（需 launchctl setenv）。
+    env: { ...process.env, OLLAMA_CONTEXT_LENGTH: process.env.OLLAMA_CONTEXT_LENGTH || '8192' },
     detached: true,
   });
   const ollamaLogFd = fs.openSync(path.join(LOG_DIR, 'ollama.std.log'), 'a');
@@ -148,16 +173,20 @@ if (!isOllamaRunning()) {
     }
   });
 
-  // 等待就绪
+  // 等待就绪：先看端口（可靠），再看接口（仅提示）
   let retries = 0;
   const waitOllama = setInterval(() => {
     retries++;
     if (isOllamaRunning()) {
       clearInterval(waitOllama);
-      log('ollama serve ready');
-    } else if (retries > 15) {
+      log(
+        isOllamaApiReady()
+          ? 'ollama serve ready'
+          : 'ollama 端口已监听，接口尚未响应（可能正在加载模型），不影响前端启动',
+      );
+    } else if (retries > 40) {
       clearInterval(waitOllama);
-      log('ollama not ready after timeout, continuing anyway');
+      log(`警告：${OLLAMA_PORT} 端口 20 秒内未监听，AI 助手会显示离线；检查 Ollama 是否安装/被拦截`);
     }
   }, 500);
 } else {

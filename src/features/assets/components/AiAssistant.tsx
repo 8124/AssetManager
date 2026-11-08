@@ -6,7 +6,6 @@ import {
   Sparkles,
   Loader2,
   ChevronDown,
-  Brain,
   ImagePlus,
   Square,
   Check,
@@ -16,10 +15,12 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  CHAT_URL,
   CHAT_OPTIONS,
+  CHAT_URL,
   DEFAULT_MODEL,
   KEEP_ALIVE,
+  MAX_HISTORY_MESSAGES,
+  THINK,
   fetchModels,
   formatModelSize,
   getSavedModel,
@@ -33,20 +34,18 @@ import { buildSystemPrompt, QUICK_QUESTIONS, WELCOME_MESSAGE } from '@/features/
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
-  /** 思考/分析过程（模型若输出 <think> 会分离到这里） */
-  thinking?: string;
   /** base64 图片（不含 data: 前缀） */
   image?: string;
 }
 
 type ModelStatus = 'checking' | 'online' | 'offline';
 
-/** 历史最多带多少轮（小模型上下文有限，太长的历史会稀释当前数据） */
-const MAX_HISTORY_MESSAGES = 8;
-
 /**
- * 流式 <think>/ thinking 标签解析器：逐块喂入文本，自动分离思考内容与正文。
- * 当前模型不产生 thinking 时该解析器只是透明转发，不影响正文。
+ * 流式 <think> 标签剥离器：逐块喂入文本，把可能混进正文的思考片段剔掉。
+ *
+ * 请求里已固定 `think: false`，正常情况下不会出现思考内容；
+ * 这里保留解析只是兜底 —— 某些模型会无视开关、自己吐 <think> 标签，
+ * 不剥掉就会以乱码形式显示在答案里。
  */
 function createThinkParser() {
   const TAGS = ['<think>', ' thinking', '</think>', '<｜end▁of▁thinking｜>'];
@@ -98,43 +97,22 @@ function createThinkParser() {
   return { feed, flush, getResult };
 }
 
-/** 单条 AI 消息气泡，带可折叠的分析过程 */
+/** 单条 AI 消息气泡 */
 function AssistantBubble({ msg, streaming }: { msg: ChatMessage; streaming?: boolean }) {
-  const [thinkingOpen, setThinkingOpen] = useState(false);
-  const hasThinking = !!msg.thinking && msg.thinking.length > 0;
-
   return (
     <div className="max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed bg-white text-foreground shadow-sm rounded-bl-md border border-border/40 prose prose-sm prose-slate max-w-none prose-p:my-1.5 prose-headings:my-2 prose-headings:text-[13px] prose-strong:text-foreground prose-ul:my-1.5 prose-li:my-0.5 prose-code:bg-muted/80 prose-code:px-1 prose-code:rounded prose-code:text-[12px] prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-pre:my-2">
-      {hasThinking && (
-        <div className="mb-2.5 rounded-lg bg-[#F2F3F7] border border-border/50 overflow-hidden">
-          <button
-            onClick={() => setThinkingOpen((v) => !v)}
-            className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-muted-foreground hover:bg-muted/50 transition-colors"
-          >
-            <Brain className="size-3.5 text-[#8E8E93]" />
-            <span className="font-medium">分析过程</span>
-            {streaming && <span className="size-1.5 rounded-full bg-[#FF9500] animate-pulse" />}
-            <span className="ml-auto">
-              <ChevronDown
-                className={`size-3.5 transition-transform ${thinkingOpen ? 'rotate-180' : ''}`}
-              />
-            </span>
-          </button>
-          {thinkingOpen && (
-            <div className="px-2.5 pb-2 pt-1 text-[12px] text-muted-foreground leading-relaxed whitespace-pre-wrap border-t border-border/40">
-              {msg.thinking}
-            </div>
-          )}
-        </div>
-      )}
       {msg.content ? (
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-      ) : streaming && !hasThinking ? (
-        <Loader2 className="size-4 text-muted-foreground animate-spin" />
+      ) : streaming ? (
+        <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          <span>正在生成…</span>
+        </div>
       ) : null}
     </div>
   );
 }
+
 
 export default function AiAssistant() {
   const [open, setOpen] = useState(false);
@@ -190,6 +168,8 @@ export default function AiAssistant() {
               model: picked,
               messages: [{ role: 'user', content: '.' }],
               stream: false,
+              // 预热只加载权重，绝不能开思考（否则要等一整段推理）
+              think: false,
               keep_alive: KEEP_ALIVE,
               options: { num_predict: 1 },
             }),
@@ -260,7 +240,7 @@ export default function AiAssistant() {
       };
       const history = [...messages, userMsg];
 
-      setMessages([...history, { role: 'assistant', content: '', thinking: '' }]);
+      setMessages([...history, { role: 'assistant', content: '' }]);
       setInput('');
       setPendingImage(null);
       setLoading(true);
@@ -287,6 +267,8 @@ export default function AiAssistant() {
             model,
             messages: [{ role: 'system', content: systemPrompt }, ...historyPayload],
             stream: true,
+            // think 是 ollama 的顶层参数，不属于 options；固定关闭，思考 token 归零
+            think: THINK,
             keep_alive: KEEP_ALIVE,
             options: CHAT_OPTIONS,
           }),
@@ -334,11 +316,11 @@ export default function AiAssistant() {
             if (!frameRef.current) {
               frameRef.current = requestAnimationFrame(() => {
                 frameRef.current = 0;
-                const { thinking, content } = parser.getResult();
+                const { content } = parser.getResult();
                 setMessages((prev) => {
                   const next = [...prev];
                   const last = next[next.length - 1];
-                  next[next.length - 1] = { ...last, content, thinking };
+                  next[next.length - 1] = { ...last, content };
                   return next;
                 });
               });
@@ -357,13 +339,17 @@ export default function AiAssistant() {
         }
         parser.flush();
         const finalResult = parser.getResult();
+        // 兜底：正文为空时必须明确告知，而不是留一片空白让人干等
+        const finalContent =
+          finalResult.content.trim().length > 0
+            ? finalResult.content
+            : '⚠️ 模型没有返回内容，请重试。';
         setMessages((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
           next[next.length - 1] = {
             ...last,
-            content: finalResult.content,
-            thinking: finalResult.thinking,
+            content: finalContent,
           };
           return next;
         });

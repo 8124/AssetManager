@@ -44,14 +44,32 @@ export interface OllamaModel {
   params?: string;
 }
 
-/** 对话请求参数：为 2B 小模型定的稳健组合（低温度、足够上下文、限制长度） */
+/**
+ * 对话参数。
+ *
+ * 关键约束（都是本机实测出来的，改之前先读）：
+ * - 始终关闭模型思考（请求体顶层 `think: false`）。实测思考 token 与正文共享 num_predict，
+ *   且思考长度完全不受控：同一提示词只改预算，一次 118s 正常收尾（思考 6391 字），
+ *   另一次 199s 空转（思考 13546 字、正文 0 字，done_reason=length）。
+ *   关掉之后同一个问题 11~26 秒出 290~860 字答案，稳定得多。
+ * - 生成速度：qwen3.5:4b 约 15~20 tok/s，9b 约 10~19 tok/s。
+ *   num_predict 给 1700：实测正文一般 300~900 token，留足余量又不至于长时间空转。
+ * - 上下文按 4096 设计（ollama 默认值，本机 MLX runner 会忽略请求里的 num_ctx），
+ *   所以「提示词约 1200 + 历史 4 条 + 生成 1700」必须压在这个范围内。
+ */
 export const CHAT_OPTIONS = {
   temperature: 0.3,
   top_p: 0.7,
   repeat_penalty: 1.05,
-  num_ctx: 8192,
-  num_predict: 1200,
+  num_ctx: 4096,
+  num_predict: 1700,
 } as const;
+
+/** 是否开启模型思考：固定关闭，界面上不提供开关 */
+export const THINK = false;
+
+/** 历史消息最多带几条（上下文只有 4096，带太多会挤掉账本数据） */
+export const MAX_HISTORY_MESSAGES = 4;
 
 /** 模型在显存/内存中保活时长 */
 export const KEEP_ALIVE = '10m';

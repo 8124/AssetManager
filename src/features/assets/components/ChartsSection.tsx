@@ -95,11 +95,16 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
   const hoveredBarItemRef = useRef<{ seriesName: string; dataIndex: number } | null>(null);
   // 离开色块后的延迟清空定时器：用于避免在相邻色块间隙处闪烁回"概览"
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 占比趋势图中当前悬停的曲线名，tooltip 只展示这一条
+  const hoveredShareSeriesRef = useRef<string | null>(null);
+  // 曲线间的延迟清空定时器：避免在相邻数据点之间移动时 tooltip 闪烁
+  const shareHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 组件卸载时清理定时器
   useEffect(() => {
     return () => {
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (shareHoverTimerRef.current) clearTimeout(shareHoverTimerRef.current);
     };
   }, []);
 
@@ -324,6 +329,9 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
       ),
       lineStyle: { width: 2 },
       itemStyle: { color: colorMap[cat] },
+      // 让整条曲线都可响应 hover，而不仅是 5px 的数据点，
+      // tooltip 据此只显示当前悬停的那条曲线
+      triggerLineEvent: true,
       emphasis: { focus: 'series' as const },
     }));
 
@@ -344,33 +352,42 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
       tooltip: {
         trigger: 'axis',
         formatter: (params: CallbackDataParams[]) => {
+          if (params.length === 0) return '';
           const idx = params[0].dataIndex;
-          // 按当前占比从高到低排列，与柱状图 tooltip 一致
-          const ordered = [...params].sort(
-            (a, b) => Number(b.value) - Number(a.value),
-          );
-          let html = `<div style="font-weight:600;margin-bottom:6px">${dates[idx]}</div>`;
-          for (const p of ordered) {
-            const cat = p.seriesName as string;
-            const cur = Number(p.value) || 0;
-            const prev = idx > 0 ? pctByCat[cat]?.[idx - 1] ?? null : null;
-            let deltaHtml: string;
-            if (prev == null) {
-              deltaHtml = `<span style="margin-left:8px;color:#8e8e93;font-size:11px">首次记录</span>`;
-            } else {
-              const delta = +(cur - prev).toFixed(1);
-              const sign = delta > 0 ? '+' : '';
-              const color =
-                delta > 0 ? '#FF3B30' : delta < 0 ? '#34C759' : '#8e8e93';
-              deltaHtml = `<span style="margin-left:8px;color:${color};font-weight:600;font-size:11px">${sign}${delta}pp</span>`;
-            }
-            html += `<div style="display:flex;align-items:center;gap:6px;margin:3px 0">`;
-            html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0"></span>`;
-            html += `<span style="font-size:12px">${cat}</span>`;
-            html += `<span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:12px;font-weight:600">${cur.toFixed(1)}%</span>`;
-            html += deltaHtml;
-            html += `</div>`;
+          const dateHtml = `<div style="font-weight:600;margin-bottom:4px">${dates[idx]}</div>`;
+
+          // 只展示鼠标当前悬停的那条曲线，不再罗列全部类别
+          const hovered = hoveredShareSeriesRef.current;
+          const p = hovered
+            ? params.find((it) => it.seriesName === hovered)
+            : undefined;
+          if (!p) {
+            // 未悬停到任何曲线：只留日期，不再罗列全部类别
+            return `${dateHtml}<div style="font-size:11px;color:#8e8e93">悬停曲线查看该类占比</div>`;
           }
+
+          const cat = p.seriesName as string;
+          const cur = Number(p.value) || 0;
+          const prev = idx > 0 ? pctByCat[cat]?.[idx - 1] ?? null : null;
+
+          let deltaHtml: string;
+          if (prev == null) {
+            deltaHtml = `<span style="margin-left:6px;color:#8e8e93;font-size:11px">首次记录</span>`;
+          } else {
+            const delta = +(cur - prev).toFixed(1);
+            const sign = delta > 0 ? '+' : '';
+            const color =
+              delta > 0 ? '#FF3B30' : delta < 0 ? '#34C759' : '#8e8e93';
+            deltaHtml = `<span style="margin-left:6px;color:${color};font-weight:600;font-size:11px">${sign}${delta}%</span>`;
+          }
+
+          let html = dateHtml;
+          html += `<div style="display:flex;align-items:center;gap:6px">`;
+          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0"></span>`;
+          html += `<span style="font-size:12px">${cat}</span>`;
+          html += `<span style="margin-left:12px;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600">${cur.toFixed(1)}%</span>`;
+          html += deltaHtml;
+          html += `</div>`;
           return html;
         },
       },
@@ -683,6 +700,47 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
                   option={shareLineOption}
                   notMerge
                   className="h-[300px] w-full"
+                  onEvents={{
+                    mouseover: (params: {
+                      componentType?: string;
+                      seriesType?: string;
+                      seriesName?: string;
+                    }) => {
+                      if (
+                        params.componentType !== 'series' ||
+                        params.seriesType !== 'line' ||
+                        !params.seriesName
+                      ) {
+                        return;
+                      }
+                      if (shareHoverTimerRef.current) {
+                        clearTimeout(shareHoverTimerRef.current);
+                        shareHoverTimerRef.current = null;
+                      }
+                      hoveredShareSeriesRef.current = params.seriesName;
+                    },
+                    mouseout: (params: {
+                      componentType?: string;
+                      seriesType?: string;
+                    }) => {
+                      if (params.componentType !== 'series') return;
+                      // 延迟清空：在同一系列相邻数据点之间移动时不会闪回仅日期
+                      if (shareHoverTimerRef.current) {
+                        clearTimeout(shareHoverTimerRef.current);
+                      }
+                      shareHoverTimerRef.current = setTimeout(() => {
+                        shareHoverTimerRef.current = null;
+                        hoveredShareSeriesRef.current = null;
+                      }, 80);
+                    },
+                    globalout: () => {
+                      if (shareHoverTimerRef.current) {
+                        clearTimeout(shareHoverTimerRef.current);
+                        shareHoverTimerRef.current = null;
+                      }
+                      hoveredShareSeriesRef.current = null;
+                    },
+                  }}
                 />
               )}
             </CardContent>
