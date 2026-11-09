@@ -12,6 +12,8 @@
 import { genId } from '@/lib/id';
 import {
   computeAmountCNY,
+  summarizeRecords,
+  todayString,
   type IAssetRecord,
   type IExchangeRate,
   type IRecordLineEntry,
@@ -103,6 +105,18 @@ export function createEmptyData(): AppData {
 
 /* ============ 简洁导入格式解析 ============ */
 
+/**
+ * 保证快照存在：导入的 JSON 若不带 recordline（或为空的旧文件），
+ * 用当前持仓生成「今天」这一条快照，否则柱状图会整块空白。
+ * 注意：历史快照一旦存在就完全保留，不再用记录回推覆盖。
+ */
+function ensureRecordLine(data: AppData): AppData {
+  const line = Array.isArray(data.recordline) ? data.recordline : [];
+  if (line.length > 0) return { ...data, recordline: line };
+  const entry = summarizeRecords(data.asset_records ?? [], todayString());
+  return { ...data, recordline: entry ? [entry] : [] };
+}
+
 function parseImportJSON(raw: string, rate: number): AppData {
   const parsed = JSON.parse(raw);
   const base = createEmptyData();
@@ -110,7 +124,7 @@ function parseImportJSON(raw: string, rate: number): AppData {
   if (Array.isArray(parsed)) {
     base.asset_records = normalizeRecords(parsed, rate);
     base.recordline = [];
-    return base;
+    return ensureRecordLine(base);
   }
 
   if (parsed.version != null || Array.isArray(parsed.asset_records)) {
@@ -118,7 +132,7 @@ function parseImportJSON(raw: string, rate: number): AppData {
     const hasRecordsField = Array.isArray(parsed.records) && parsed.records.length > 0;
     const assetRecordsEmpty = !Array.isArray(parsed.asset_records) || parsed.asset_records.length === 0;
     const recordsSource = hasRecordsField && assetRecordsEmpty ? parsed.records : (parsed.asset_records ?? []);
-    return {
+    return ensureRecordLine({
       ...base,
       ...parsed,
       version: DATA_VERSION,
@@ -126,14 +140,14 @@ function parseImportJSON(raw: string, rate: number): AppData {
       asset_exchange_rate: parsed.asset_exchange_rate ?? base.asset_exchange_rate,
       physical_items: normalizePhysicalItems(parsed.physical_items ?? []),
       recordline: Array.isArray(parsed.recordline) ? parsed.recordline : [],
-    };
+    });
   }
 
   if (parsed.records || parsed.physical_items) {
     base.asset_records = normalizeRecords(parsed.records ?? [], rate);
     base.physical_items = normalizePhysicalItems(parsed.physical_items ?? []);
     base.recordline = Array.isArray(parsed.recordline) ? parsed.recordline : [];
-    return base;
+    return ensureRecordLine(base);
   }
 
   throw new Error('无法识别的 JSON 格式');
@@ -591,8 +605,8 @@ class LocalFileStore {
       if (!text.trim()) {
         if (!this.restoreSnapshot()) this.data = createEmptyData();
       } else {
-        // parseImportJSON 同时兼容内部格式和用户精简格式（records → asset_records）
-        this.data = parseImportJSON(text, DEFAULT_RATE.rate);
+        // 用账本已保存的汇率解析，避免 USD 记录折算出与当前汇率不一致的人民币金额
+        this.data = parseImportJSON(text, this.loadSavedRate().rate);
       }
       // 汇率不写入 JSON 文件，按账本存在 localStorage
       this.data.asset_exchange_rate = this.loadSavedRate();
@@ -672,6 +686,7 @@ class LocalFileStore {
       const parsed = JSON.parse(raw) as AppData;
       if (!parsed || typeof parsed !== 'object') return false;
       this.data = { ...createEmptyData(), ...parsed };
+      this.data = ensureRecordLine(this.data);
       this.data.asset_exchange_rate = this.loadSavedRate();
       return true;
     } catch {

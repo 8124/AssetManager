@@ -1,11 +1,16 @@
 /**
  * 资产数据 Hooks：桥接「本地存储」与「React 状态」。
  *
- * 统一封装两类数据源：
- * - useAssetRecords：资产记录（增删改 + 汇率折算 + 外部变更订阅）
- * - useRecordLine：按日期聚合的资产快照（趋势图数据源）
+ * 数据模型（重写后的记账模型）：
+ * - asset_records：当前持仓清单。每条代表一项资产，金额/类别可随时编辑；
+ *   记录上的 date 只是「录入日期」元信息，不参与任何按日期的计算。
+ * - recordline：按日期聚合的资产快照，是柱状图 / 折线图 / 历史数据的唯一数据源。
  *
- * 汇率（useExchangeRate）为页面共用的共享 Hook，见 @/hooks/useExchangeRate。
+ * 写入规则（关键）：
+ * 1. 新增 / 编辑 / 删除记录，以及汇率变化 → 只重写「今天」这一条快照；
+ * 2. 历史日期的快照一经生成即冻结，绝不会被今天的持仓覆盖；
+ * 3. 要修改历史某天的数据，只能走「记录条数」弹窗（手动编辑该日期快照）；
+ * 4. 只浏览、切换账本、启动页面都不写入快照。
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -13,6 +18,9 @@ import { genId } from '@/lib/id';
 import { localFileStore } from '@/store/localFileStore';
 import {
   computeAmountCNY,
+  sortRecordLine,
+  summarizeRecords,
+  todayString,
   STORAGE_KEYS,
   type IAssetRecord,
   type IRecordLineEntry,
@@ -29,44 +37,57 @@ function saveJSON(key: string, value: unknown) {
   localFileStore.set(key as never, value);
 }
 
+/** 自动改写快照前保留一份原始数据，便于核对/回滚 */
+const RECORD_LINE_BACKUP_KEY = '__app_recordline_backup';
+
+function backupRecordLine(line: IRecordLineEntry[]) {
+  if (line.length === 0) return;
+  try {
+    localStorage.setItem(
+      RECORD_LINE_BACKUP_KEY,
+      JSON.stringify({ savedAt: Date.now(), recordline: line }),
+    );
+  } catch {
+    // localStorage 写入失败时忽略，不影响主流程
+  }
+}
+
+/**
+ * 把「今天」的快照同步为当前持仓汇总。
+ * 只碰今天这一条，历史条目原样保留。
+ */
+function syncTodaySnapshot(records: IAssetRecord[]): void {
+  const today = todayString();
+  const line = loadJSON<IRecordLineEntry[]>(STORAGE_KEYS.RECORD_LINE, []);
+  const entry = summarizeRecords(records, today);
+
+  let next: IRecordLineEntry[];
+  if (!entry) {
+    // 记录清空：今天没有可展示的资产，移除今天的快照
+    if (!line.some((e) => e.date === today)) return;
+    next = line.filter((e) => e.date !== today);
+  } else if (line.some((e) => e.date === today)) {
+    next = sortRecordLine(line.map((e) => (e.date === today ? entry : e)));
+  } else {
+    next = sortRecordLine([...line, entry]);
+  }
+
+  if (JSON.stringify(next) === JSON.stringify(line)) return;
+  saveJSON(STORAGE_KEYS.RECORD_LINE, next);
+}
+
 export function useAssetRecords(rate: number) {
   const [records, setRecords] = useState<IAssetRecord[]>(() =>
     loadJSON<IAssetRecord[]>(STORAGE_KEYS.RECORDS, []),
   );
-  // 记录最后一次增删改操作对应的日期，用于只更新该日期的 recordline
-  const lastActionDateRef = useRef<string | null>(null);
+  /** 是否有需要同步到「今天快照」的变更（只在用户操作后置位） */
+  const todayDirtyRef = useRef(false);
 
   useEffect(() => {
     saveJSON(STORAGE_KEYS.RECORDS, records);
-
-    // 只更新最后操作日期的 recordline 条目，其他日期保持不变
-    const date = lastActionDateRef.current;
-    if (date) {
-      const categoryTotals: Record<string, number> = {};
-      for (const r of records) {
-        categoryTotals[r.category] = +(
-          (categoryTotals[r.category] || 0) + r.amountCNY
-        ).toFixed(2);
-      }
-      const total = +Object.values(categoryTotals)
-        .reduce((s, v) => s + v, 0)
-        .toFixed(2);
-
-      const currentLine = loadJSON<IRecordLineEntry[]>(STORAGE_KEYS.RECORD_LINE, []);
-      const entry: IRecordLineEntry = {
-        date,
-        categories: categoryTotals,
-        tolamount: total,
-      };
-      const idx = currentLine.findIndex((e) => e.date === date);
-      // 必须创建新数组，否则 localFileStore 中引用不变，useRecordLine 不会触发刷新
-      const nextLine: IRecordLineEntry[] =
-        idx >= 0
-          ? currentLine.map((e, i) => (i === idx ? entry : e))
-          : [...currentLine, entry].sort((a, b) => a.date.localeCompare(b.date));
-      saveJSON(STORAGE_KEYS.RECORD_LINE, nextLine);
-      lastActionDateRef.current = null;
-    }
+    if (!todayDirtyRef.current) return;
+    todayDirtyRef.current = false;
+    syncTodaySnapshot(records);
   }, [records]);
 
   // 订阅外部数据变更（导入 JSON、切换账本等），同步刷新 React 状态
@@ -77,7 +98,8 @@ export function useAssetRecords(rate: number) {
     });
   }, []);
 
-  // 汇率变动时重新折算所有 USD 记录的 amountCNY
+  // 汇率变动时重新折算 USD 记录的 amountCNY，并刷新今天快照
+  // （历史快照是冻结的记账结果，不因汇率变化而改写）
   useEffect(() => {
     setRecords((prev) => {
       let changed = false;
@@ -88,6 +110,7 @@ export function useAssetRecords(rate: number) {
         changed = true;
         return { ...r, amountCNY: newCNY };
       });
+      if (changed) todayDirtyRef.current = true;
       return changed ? next : prev;
     });
   }, [rate]);
@@ -98,7 +121,6 @@ export function useAssetRecords(rate: number) {
       category: string;
       amount: number;
       currency: 'CNY' | 'USD';
-      date: string;
     }) => {
       const record: IAssetRecord = {
         id: genId(),
@@ -107,11 +129,12 @@ export function useAssetRecords(rate: number) {
         amount: data.amount,
         currency: data.currency,
         amountCNY: computeAmountCNY(data.amount, data.currency, rate),
-        date: data.date,
+        // 记录永远记在今天；历史数据只能通过快照编辑来修正
+        date: todayString(),
         createdAt: Date.now(),
         source: 'user',
       };
-      lastActionDateRef.current = data.date;
+      todayDirtyRef.current = true;
       setRecords((prev) => [...prev, record]);
       return record;
     },
@@ -121,9 +144,9 @@ export function useAssetRecords(rate: number) {
   const updateRecord = useCallback(
     (
       id: string,
-      data: Partial<Pick<IAssetRecord, 'name' | 'category' | 'amount' | 'currency' | 'date'>>,
+      data: Partial<Pick<IAssetRecord, 'name' | 'category' | 'amount' | 'currency'>>,
     ) => {
-      lastActionDateRef.current = data.date ?? null;
+      todayDirtyRef.current = true;
       setRecords((prev) =>
         prev.map((r) => {
           if (r.id !== id) return r;
@@ -139,14 +162,11 @@ export function useAssetRecords(rate: number) {
   );
 
   const deleteRecord = useCallback((id: string) => {
-    setRecords((prev) => {
-      const target = prev.find((r) => r.id === id);
-      if (target) lastActionDateRef.current = target.date;
-      return prev.filter((r) => r.id !== id);
-    });
+    todayDirtyRef.current = true;
+    setRecords((prev) => prev.filter((r) => r.id !== id));
   }, []);
 
-  return { records, addRecord, updateRecord, deleteRecord, setRecords };
+  return { records, addRecord, updateRecord, deleteRecord };
 }
 
 /**
@@ -168,7 +188,7 @@ export function useRecordLine() {
 }
 
 /**
- * 更新某条日期快照（直接写 recordline，与 JSON 同步）。
+ * 手动更新某一天的快照（「记录条数」弹窗专用，唯一能改历史数据的入口）。
  * - 日期未变：原位替换；
  * - 日期变更：删除旧条目、按新日期插入并排序；若新日期已存在快照则抛错。
  */
@@ -182,19 +202,20 @@ export function updateRecordLineEntry(
     nextLine = line.map((e) => (e.date === prevDate ? next : e));
   } else {
     if (line.some((e) => e.date === next.date)) {
-      throw new Error('该日期已存在快照');
+      throw new Error('该日期已存在记录，请直接编辑那一天的记录');
     }
-    nextLine = line
-      .filter((e) => e.date !== prevDate)
-      .concat(next)
-      .sort((a, b) => a.date.localeCompare(b.date));
+    nextLine = sortRecordLine(
+      line.filter((e) => e.date !== prevDate).concat(next),
+    );
   }
+  backupRecordLine(line);
   saveJSON(STORAGE_KEYS.RECORD_LINE, nextLine);
 }
 
-/** 删除某条日期快照（直接写 recordline，与 JSON 同步） */
+/** 删除某一天的快照（该日期将从柱状图与占比图中移除） */
 export function deleteRecordLineEntry(date: string): void {
   const line = loadJSON<IRecordLineEntry[]>(STORAGE_KEYS.RECORD_LINE, []);
+  backupRecordLine(line);
   saveJSON(
     STORAGE_KEYS.RECORD_LINE,
     line.filter((e) => e.date !== date),

@@ -460,12 +460,25 @@ export default function AiAssistant() {
         <Sparkles className="size-6" strokeWidth={2} />
       </button>
 
-      {/* 右侧抽屉 */}
+      {/* 居中弹窗：宽度与页面内容区同一套约束（max-w-6xl + px-4 md:px-6），左右边缘对齐 */}
       <div
-        className={`fixed inset-y-0 right-0 z-[60] w-full max-w-md bg-white shadow-2xl transition-transform duration-300 ease-out flex flex-col ${
-          open ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed inset-0 z-[60] flex items-center justify-center px-4 md:px-6 py-6 transition-opacity duration-200 ${
+          open ? 'bg-black/25 opacity-100' : 'bg-transparent opacity-0 pointer-events-none'
         }`}
+        onClick={() => {
+          setOpen(false);
+          setModelMenuOpen(false);
+        }}
       >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="AI 账房先生"
+          onClick={(e) => e.stopPropagation()}
+          className={`flex flex-col w-full max-w-6xl h-[min(86vh,820px)] bg-white rounded-2xl border border-border/50 shadow-2xl overflow-hidden transition-transform duration-200 ease-out ${
+            open ? 'scale-100' : 'scale-95'
+          }`}
+        >
         {/* 顶部栏 */}
         <div className="flex items-start justify-between px-5 py-3.5 border-b border-border/60 bg-white/80 backdrop-blur-xl">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -678,18 +691,10 @@ export default function AiAssistant() {
             )}
           </div>
         </div>
+        </div>
       </div>
 
-      {/* 遮罩层 */}
-      {open && (
-        <div
-          className="fixed inset-0 z-[55] bg-black/20 md:bg-black/10 transition-opacity"
-          onClick={() => {
-            setOpen(false);
-            setModelMenuOpen(false);
-          }}
-        />
-      )}
+      {/* 遮罩层已合并进上面的居中容器，点击空白处即可关闭 */}
     </>
   );
 }

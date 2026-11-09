@@ -2,9 +2,10 @@ import { useState, useMemo, useCallback } from 'react';
 import AppHeader from '@/components/layout/AppHeader';
 import OverviewSection from './components/OverviewSection';
 import ChartsSection from './components/ChartsSection';
-import AssetFormDialog from './components/AssetFormDialog';
+import AssetFormDialog, { type IAssetFormData } from './components/AssetFormDialog';
 import RecordsDialog from './components/RecordsDialog';
 import {
+  buildCategoryOptions,
   computeYearAvgFromRecordLine,
   computeYearChangeFromRecordLine,
   deriveCategories,
@@ -18,8 +19,10 @@ export default function AssetsPage() {
   const { rateInfo } = useExchangeRate();
   const { records, addRecord, updateRecord, deleteRecord } = useAssetRecords(rateInfo.rate);
 
-  // 类别从记录中自动派生（去重），无需单独存储
+  // 类别：统计 / 筛选用「实际出现过」的类别
   const categories = useMemo(() => deriveCategories(records), [records]);
+  // 表单下拉：已有类别 + 默认类别，保证第一次记账也能直接选
+  const categoryOptions = useMemo(() => buildCategoryOptions(records), [records]);
   // 按日期聚合的资产快照（用于趋势图 & 今年平均资产）
   const recordLine = useRecordLine();
   // 今年平均资产：取本年度每月月末快照总额的平均值
@@ -88,29 +91,14 @@ export default function AssetsPage() {
   };
 
   const handleAddRecord = useCallback(
-    (data: {
-      name: string;
-      category: string;
-      amount: number;
-      currency: 'CNY' | 'USD';
-      date: string;
-    }) => {
+    (data: IAssetFormData) => {
       addRecord(data);
     },
     [addRecord],
   );
 
   const handleUpdateRecord = useCallback(
-    (
-      id: string,
-      data: {
-        name: string;
-        category: string;
-        amount: number;
-        currency: 'CNY' | 'USD';
-        date: string;
-      },
-    ) => {
+    (id: string, data: IAssetFormData) => {
       updateRecord(id, data);
     },
     [updateRecord],
@@ -147,7 +135,7 @@ export default function AssetsPage() {
       <AssetFormDialog
         open={formOpen}
         onOpenChange={handleFormClose}
-        categories={categories}
+        categories={categoryOptions}
         onSubmit={handleAddRecord}
         editingRecord={editingRecord}
         onUpdate={handleUpdateRecord}

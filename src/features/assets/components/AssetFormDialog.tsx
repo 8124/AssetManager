@@ -23,16 +23,22 @@ import {
   RadioGroup,
   RadioGroupItem,
 } from '@/components/ui/radio-group';
-import { evalSimpleExpression, type IAssetRecord } from '@/domain/asset';
-import { format } from 'date-fns';
+import { evalSimpleExpression, todayString, type IAssetRecord } from '@/domain/asset';
+
+export interface IAssetFormData {
+  name: string;
+  category: string;
+  amount: number;
+  currency: 'CNY' | 'USD';
+}
 
 interface AssetFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   categories: string[];
-  onSubmit: (data: { name: string; category: string; amount: number; currency: 'CNY' | 'USD'; date: string }) => void;
+  onSubmit: (data: IAssetFormData) => void;
   editingRecord?: IAssetRecord | null;
-  onUpdate?: (id: string, data: { name: string; category: string; amount: number; currency: 'CNY' | 'USD'; date: string }) => void;
+  onUpdate?: (id: string, data: IAssetFormData) => void;
 }
 
 export default function AssetFormDialog({
@@ -47,7 +53,6 @@ export default function AssetFormDialog({
   const [category, setCategory] = useState(categories[0] ?? '');
   const [amountInput, setAmountInput] = useState('');
   const [currency, setCurrency] = useState<'CNY' | 'USD'>('CNY');
-  const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
@@ -55,19 +60,16 @@ export default function AssetFormDialog({
 
   useEffect(() => {
     if (!open) return;
-    // 编辑模式：严格保留原记录的日期，不自动改为今天
     if (editingRecord) {
       setName(editingRecord.name ?? '');
       setCategory(editingRecord.category);
       setAmountInput(editingRecord.amount.toString());
       setCurrency(editingRecord.currency);
-      setDate(editingRecord.date);
     } else {
       setName('');
       setCategory(categories[0] ?? '');
       setAmountInput('');
       setCurrency('CNY');
-      setDate(format(new Date(), 'yyyy-MM-dd'));
     }
     setShowNewCategory(false);
     setNewCategoryName('');
@@ -96,7 +98,7 @@ export default function AssetFormDialog({
     setCategory(cname);
     setNewCategoryName('');
     setShowNewCategory(false);
-    toast.success(`已选择类别「${cname}」，保存记录后自动加入类别列表`);
+    toast.success(`已选择类别「${cname}」，保存后自动加入类别列表`);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -116,11 +118,13 @@ export default function AssetFormDialog({
       return;
     }
 
+    const data: IAssetFormData = { name: trimmedName, category, amount, currency };
+
     if (isEditing && editingRecord && onUpdate) {
-      onUpdate(editingRecord.id, { name: trimmedName, category, amount, currency, date });
+      onUpdate(editingRecord.id, data);
       toast.success('资产记录已更新');
     } else {
-      onSubmit({ name: trimmedName, category, amount, currency, date });
+      onSubmit(data);
       toast.success('资产记录已保存');
     }
     onOpenChange(false);
@@ -130,9 +134,11 @@ export default function AssetFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>{isEditing ? '编辑资产记录' : '新增资产记录'}</DialogTitle>
+          <DialogTitle>{isEditing ? '编辑资产' : '记一笔'}</DialogTitle>
           <DialogDescription>
-            {isEditing ? '修改资产记录信息，保存后即时更新' : '填写资产信息，金额支持 + - 运算表达式'}
+            {isEditing
+              ? '修改后立即更新今天的资产构成'
+              : `记录到今天（${todayString()}），金额支持 + - 运算表达式`}
           </DialogDescription>
         </DialogHeader>
 
@@ -219,53 +225,27 @@ export default function AssetFormDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            {/* 币种 */}
-            <div className="space-y-2">
-              <Label>币种</Label>
-              <RadioGroup
-                value={currency}
-                onValueChange={(v) => setCurrency(v as 'CNY' | 'USD')}
-                className="flex gap-4"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="CNY" id="dlg-cny" />
-                  <Label htmlFor="dlg-cny" className="cursor-pointer font-normal text-sm">
-                    人民币
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="USD" id="dlg-usd" />
-                  <Label htmlFor="dlg-usd" className="cursor-pointer font-normal text-sm">
-                    美元
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {/* 日期 */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="dlg-date">日期</Label>
-                {isEditing && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-auto p-0 text-xs text-[#007AFF] hover:text-[#0066CC] hover:bg-transparent"
-                    onClick={() => setDate(format(new Date(), 'yyyy-MM-dd'))}
-                  >
-                    设为今天
-                  </Button>
-                )}
+          {/* 币种 */}
+          <div className="space-y-2">
+            <Label>币种</Label>
+            <RadioGroup
+              value={currency}
+              onValueChange={(v) => setCurrency(v as 'CNY' | 'USD')}
+              className="flex gap-6"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="CNY" id="dlg-cny" />
+                <Label htmlFor="dlg-cny" className="cursor-pointer font-normal text-sm">
+                  人民币
+                </Label>
               </div>
-              <Input
-                id="dlg-date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
-            </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="USD" id="dlg-usd" />
+                <Label htmlFor="dlg-usd" className="cursor-pointer font-normal text-sm">
+                  美元
+                </Label>
+              </div>
+            </RadioGroup>
           </div>
 
           <DialogFooter className="pt-2">
@@ -277,7 +257,7 @@ export default function AssetFormDialog({
               取消
             </Button>
             <Button type="submit" className="bg-[#007AFF] hover:bg-[#0066CC]">
-              {isEditing ? '保存修改' : '添加记录'}
+              {isEditing ? '保存修改' : '记一笔'}
             </Button>
           </DialogFooter>
         </form>

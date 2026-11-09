@@ -48,7 +48,7 @@ interface RecordsDialogProps {
   onDelete: (id: string) => void;
 }
 
-type SortOrder = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc';
+type SortOrder = 'amount-desc' | 'amount-asc' | 'name-asc';
 
 export default function RecordsDialog({
   open,
@@ -59,7 +59,7 @@ export default function RecordsDialog({
   onDelete,
 }: RecordsDialogProps) {
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('date-desc');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('amount-desc');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<IAssetRecord | null>(null);
 
@@ -80,17 +80,14 @@ export default function RecordsDialog({
     }
 
     switch (sortOrder) {
-      case 'date-desc':
-        list.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
-        break;
-      case 'date-asc':
-        list.sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
-        break;
       case 'amount-desc':
         list.sort((a, b) => b.amountCNY - a.amountCNY);
         break;
       case 'amount-asc':
         list.sort((a, b) => a.amountCNY - b.amountCNY);
+        break;
+      case 'name-asc':
+        list.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
         break;
     }
 
@@ -117,9 +114,9 @@ export default function RecordsDialog({
           <DialogHeader className="px-6 py-4 border-b border-border/40">
             <div className="flex items-center justify-between">
               <div>
-                <DialogTitle className="text-base">资产记录</DialogTitle>
+                <DialogTitle className="text-base">当前持仓</DialogTitle>
                 <DialogDescription>
-                  共 {records.length} 条资产记录
+                  共 {records.length} 项资产，合计按人民币计价；修改后今天的总额即时更新
                 </DialogDescription>
               </div>
             </div>
@@ -158,14 +155,13 @@ export default function RecordsDialog({
             <div className="flex items-center gap-1.5 ml-auto">
               <ArrowUpDown className="size-3.5 text-muted-foreground" />
               <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as SortOrder)}>
-                <SelectTrigger className="w-32 h-8 text-sm">
+                <SelectTrigger className="w-36 h-8 text-sm">
                   <SelectValue placeholder="排序方式" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="date-desc">日期从新到旧</SelectItem>
-                  <SelectItem value="date-asc">日期从旧到新</SelectItem>
                   <SelectItem value="amount-desc">金额从高到低</SelectItem>
                   <SelectItem value="amount-asc">金额从低到高</SelectItem>
+                  <SelectItem value="name-asc">按类别排序</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -178,11 +174,11 @@ export default function RecordsDialog({
                 <div className="size-12 rounded-full bg-muted flex items-center justify-center mb-3">
                   <Search className="size-5 text-muted-foreground" />
                 </div>
-                <p className="text-sm font-medium text-foreground">暂无记录</p>
+                <p className="text-sm font-medium text-foreground">暂无资产</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {records.length === 0
-                    ? '添加第一条资产记录吧'
-                    : '没有符合筛选条件的记录'}
+                    ? '点「记一笔」添加第一项资产'
+                    : '没有符合筛选条件的资产'}
                 </p>
               </div>
             ) : (
@@ -193,7 +189,6 @@ export default function RecordsDialog({
                       <TableHead className="whitespace-nowrap min-w-[180px]">资产名称 · 类别</TableHead>
                       <TableHead className="whitespace-nowrap">原始金额</TableHead>
                       <TableHead className="whitespace-nowrap">人民币金额</TableHead>
-                      <TableHead className="whitespace-nowrap">日期</TableHead>
                       <TableHead className="whitespace-nowrap text-right pr-2">操作</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -219,9 +214,6 @@ export default function RecordsDialog({
                         </TableCell>
                         <TableCell className="tabular-nums font-medium text-sm">
                           {formatCurrencyCNY(record.amountCNY)}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {record.date}
                         </TableCell>
                         <TableCell className="text-right pr-2">
                           <div className="flex items-center justify-end gap-1">

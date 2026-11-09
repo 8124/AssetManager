@@ -95,16 +95,11 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
   const hoveredBarItemRef = useRef<{ seriesName: string; dataIndex: number } | null>(null);
   // 离开色块后的延迟清空定时器：用于避免在相邻色块间隙处闪烁回"概览"
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 占比趋势图中当前悬停的曲线名，tooltip 只展示这一条
-  const hoveredShareSeriesRef = useRef<string | null>(null);
-  // 曲线间的延迟清空定时器：避免在相邻数据点之间移动时 tooltip 闪烁
-  const shareHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 组件卸载时清理定时器
   useEffect(() => {
     return () => {
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-      if (shareHoverTimerRef.current) clearTimeout(shareHoverTimerRef.current);
     };
   }, []);
 
@@ -247,6 +242,20 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
                 html += `</span>`;
               }
               html += `</div>`;
+
+              // 同时给出总资产环比：色块上只看到「该类别」的变化，
+              // 类别当天没变动时容易误判为「增幅为 0」
+              const totalPrev = prevTotals[idx];
+              if (totalPrev != null) {
+                const tDiff = +(total - totalPrev).toFixed(2);
+                if (Math.abs(tDiff) >= 0.01) {
+                  const tRate = totalPrev !== 0 ? ((tDiff / totalPrev) * 100).toFixed(1) : null;
+                  const tColor = tDiff > 0 ? '#FF3B30' : '#34C759';
+                  const tSign = tDiff > 0 ? '+' : '-';
+                  html += `<div style="font-size:11px;color:#8e8e93;margin-top:4px;padding-top:4px;border-top:1px solid rgba(0,0,0,0.06)">总资产：<span style="color:${tColor};font-weight:600">${tSign}${formatCurrencyCNY(Math.abs(tDiff))}${tRate != null ? `（${tSign}${Math.abs(+tRate)}%）` : ''}</span></div>`;
+                }
+              }
+
               return html;
             }
           }
@@ -303,119 +312,129 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
     };
   }, [recordLine, barView]);
 
-  // ============ 资产占比趋势折线图（各类别占总资产比例随时间变化） ============
-  const shareLineOption: EChartsOption = useMemo(() => {
-    if (recordLine.length === 0) return {};
-    const sorted = [...recordLine].sort((a, b) => a.date.localeCompare(b.date));
-
-    const allCats = new Set<string>();
-    for (const e of sorted) {
-      for (const c of Object.keys(e.categories)) allCats.add(c);
+  // ============ 资产增减（每期较上一期的总资产变化，红涨绿跌） ============
+  // 按类别比变化会被「金额最大的那一项」压扁（一个 28 万的类别 vs 几千的类别），
+  // 所以这里看每期总资产的增减，类别明细放进 tooltip 的「主要贡献」。
+  const changeTrend = useMemo(() => {
+    const { dates, categories, seriesData, totals } = processRecordLineData(
+      recordLine,
+      barView,
+    );
+    if (dates.length < 2) {
+      return {
+        dates,
+        categories,
+        seriesData,
+        totals,
+        diffs: [] as (number | null)[],
+        contributors: [] as { cat: string; diff: number }[][],
+      };
     }
-    const categories = Array.from(allCats).sort();
-    const colorMap = buildCategoryColorMap(categories);
-    const dates = sorted.map((e) => e.date);
 
-    const series = categories.map((cat) => ({
-      name: cat,
-      type: 'line' as const,
-      smooth: true,
-      symbol: 'circle',
-      symbolSize: 5,
-      data: sorted.map((e) =>
-        e.tolamount > 0
-          ? +(((e.categories[cat] ?? 0) / e.tolamount) * 100).toFixed(1)
-          : 0,
-      ),
-      lineStyle: { width: 2 },
-      itemStyle: { color: colorMap[cat] },
-      // 让整条曲线都可响应 hover，而不仅是 5px 的数据点，
-      // tooltip 据此只显示当前悬停的那条曲线
-      triggerLineEvent: true,
-      emphasis: { focus: 'series' as const },
-    }));
+    const diffs: (number | null)[] = totals.map((t, i) =>
+      i === 0 ? null : +(t - totals[i - 1]).toFixed(2),
+    );
 
-    // 各类别占比矩阵（用于 tooltip 计算相对上一条记录的变动）
-    const pctByCat: Record<string, number[]> = {};
-    let maxPct = 0;
-    for (const s of series) {
-      pctByCat[s.name] = s.data as number[];
-      for (const v of s.data as number[]) {
-        if (v > maxPct) maxPct = v;
-      }
-    }
-    // Y 轴按最高占比自动缩放（向上取整到 5 的倍数，留 15% 头部空间）
-    const yMax = maxPct > 0 ? Math.ceil((maxPct * 1.15) / 5) * 5 : 100;
+    // 每个日期点的类别贡献（本期 - 上期），用于 tooltip
+    const contributors: { cat: string; diff: number }[][] = dates.map((_, i) => {
+      if (i === 0) return [];
+      return categories
+        .map((cat) => ({
+          cat,
+          diff: +((seriesData[cat]?.[i] ?? 0) - (seriesData[cat]?.[i - 1] ?? 0)).toFixed(2),
+        }))
+        .filter((c) => Math.abs(c.diff) >= 1)
+        .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+        .slice(0, 3);
+    });
+
+    return { dates, categories, seriesData, totals, diffs, contributors };
+  }, [recordLine, barView]);
+
+  const changeOption: EChartsOption = useMemo(() => {
+    const { dates, totals, diffs } = changeTrend;
+    if (diffs.length === 0) return {};
+    const contributors = changeTrend.contributors ?? [];
+
+    const series: BarSeriesOption[] = [
+      {
+        name: '较上期变化',
+        type: 'bar',
+        barWidth: 26,
+        data: diffs.map((d) =>
+          d == null
+            ? null
+            : {
+                value: d,
+                itemStyle: {
+                  color: d > 0 ? '#FF3B30' : d < 0 ? '#34C759' : '#C7C7CC',
+                  borderRadius: 4,
+                },
+              },
+        ),
+      },
+    ];
 
     return {
       animationDurationUpdate: 0,
       tooltip: {
         trigger: 'axis',
+        axisPointer: { type: 'shadow' },
         formatter: (params: CallbackDataParams[]) => {
-          if (params.length === 0) return '';
-          const idx = params[0].dataIndex;
-          const dateHtml = `<div style="font-weight:600;margin-bottom:4px">${dates[idx]}</div>`;
-
-          // 只展示鼠标当前悬停的那条曲线，不再罗列全部类别
-          const hovered = hoveredShareSeriesRef.current;
-          const p = hovered
-            ? params.find((it) => it.seriesName === hovered)
-            : undefined;
-          if (!p) {
-            // 未悬停到任何曲线：只留日期，不再罗列全部类别
-            return `${dateHtml}<div style="font-size:11px;color:#8e8e93">悬停曲线查看该类占比</div>`;
+          const idx = params[0]?.dataIndex ?? 0;
+          const diff = diffs[idx];
+          if (diff == null) {
+            return `<div style="font-weight:600">${dates[idx]}</div><div style="font-size:11px;color:#8e8e93;margin-top:4px">首个记录日，没有可对比的上一期</div>`;
           }
+          const flat = diff === 0;
+          const up = diff > 0;
+          const color = flat ? '#8e8e93' : up ? '#FF3B30' : '#34C759';
+          const sign = flat ? '' : up ? '+' : '-';
+          const prev = totals[idx - 1];
+          const rate = prev > 0 ? (diff / prev) * 100 : null;
 
-          const cat = p.seriesName as string;
-          const cur = Number(p.value) || 0;
-          const prev = idx > 0 ? pctByCat[cat]?.[idx - 1] ?? null : null;
-
-          let deltaHtml: string;
-          if (prev == null) {
-            deltaHtml = `<span style="margin-left:6px;color:#8e8e93;font-size:11px">首次记录</span>`;
-          } else {
-            const delta = +(cur - prev).toFixed(1);
-            const sign = delta > 0 ? '+' : '';
-            const color =
-              delta > 0 ? '#FF3B30' : delta < 0 ? '#34C759' : '#8e8e93';
-            deltaHtml = `<span style="margin-left:6px;color:${color};font-weight:600;font-size:11px">${sign}${delta}%</span>`;
-          }
-
-          let html = dateHtml;
-          html += `<div style="display:flex;align-items:center;gap:6px">`;
-          html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0"></span>`;
-          html += `<span style="font-size:12px">${cat}</span>`;
-          html += `<span style="margin-left:12px;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600">${cur.toFixed(1)}%</span>`;
-          html += deltaHtml;
+          let html = `<div style="font-weight:600;margin-bottom:4px">${dates[idx]}</div>`;
+          html += `<div style="font-size:15px;font-weight:700;color:${color};font-variant-numeric:tabular-nums">`;
+          html += flat
+            ? '与上期持平'
+            : `${sign}${formatCurrencyCNY(Math.abs(diff))}${
+                rate != null ? `（${sign}${Math.abs(rate).toFixed(1)}%）` : ''
+              }`;
           html += `</div>`;
+          html += `<div style="font-size:11px;color:#8e8e93;margin:2px 0 6px">${formatCurrencyCNY(prev)} → ${formatCurrencyCNY(totals[idx])}</div>`;
+          const list = contributors[idx] ?? [];
+          if (list.length > 0) {
+            html += `<div style="font-size:11px;color:#8e8e93;border-top:1px solid rgba(0,0,0,0.06);padding-top:4px">主要贡献</div>`;
+            for (const c of list) {
+              const cUp = c.diff > 0;
+              html += `<div style="display:flex;gap:8px;font-size:12px;margin-top:2px">`;
+              html += `<span>${c.cat}</span>`;
+              html += `<span style="margin-left:auto;font-variant-numeric:tabular-nums;font-weight:600;color:${cUp ? '#FF3B30' : '#34C759'}">${cUp ? '+' : '-'}${formatCurrencyCNY(Math.abs(c.diff))}</span>`;
+              html += `</div>`;
+            }
+          }
           return html;
         },
       },
-      legend: {
-        type: 'scroll',
-        bottom: 0,
-        icon: 'circle',
-        itemWidth: 10,
-        itemHeight: 10,
-        itemGap: 12,
-        textStyle: { fontSize: 11, color: 'hsl(222 18% 14%)' },
-      },
-      grid: { left: 44, right: 16, top: 16, bottom: dates.length > 10 ? 56 : 48 },
+      grid: { left: 56, right: 16, top: 16, bottom: dates.length > 15 ? 64 : 48 },
       xAxis: {
         type: 'category',
         data: dates,
-        boundaryGap: false,
-        axisLabel: { fontSize: 10, rotate: dates.length > 10 ? 30 : 0 },
+        axisTick: { show: false },
+        axisLabel: { fontSize: 10, rotate: dates.length > 10 ? 30 : 0, hideOverlap: true },
       },
       yAxis: {
         type: 'value',
-        min: 0,
-        max: yMax,
-        axisLabel: { formatter: '{value}%' },
+        axisLabel: {
+          fontSize: 10,
+          formatter: (value: number) =>
+            Math.abs(value) >= 10000 ? `${(value / 10000).toFixed(0)}万` : `${value}`,
+        },
+        splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
       },
       series,
     };
-  }, [recordLine]);
+  }, [changeTrend]);
 
   // ============ 双层嵌套环形饼图 ============
   const nestedPieOption: EChartsOption = useMemo(() => {
@@ -685,62 +704,41 @@ export default function ChartsSection({ records }: ChartsSectionProps) {
             </CardContent>
           </Card>
 
-          {/* 资产占比趋势折线图 */}
+          {/* 资产增减：每期较上一期的变化 */}
           <Card className="border-border/40 bg-white shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">资产占比趋势</CardTitle>
+            <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+              <CardTitle className="text-sm font-semibold">资产增减</CardTitle>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground shrink-0 hidden sm:inline">
+                  较上一期
+                </span>
+                <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5">
+                  {(['week', 'year', 'all'] as BarView[]).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setBarView(v)}
+                      className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                        barView === v
+                          ? 'bg-white text-foreground shadow-sm font-medium'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {v === 'week' ? '周' : v === 'year' ? '月' : '全部'}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="pt-0">
-              {recordLine.length === 0 ? (
+              {changeTrend.diffs.length === 0 ? (
                 <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
-                  暂无数据，请先添加资产记录
+                  至少需要两天的记录才能查看增减
                 </div>
               ) : (
                 <ReactECharts
-                  option={shareLineOption}
+                  option={changeOption}
                   notMerge
                   className="h-[300px] w-full"
-                  onEvents={{
-                    mouseover: (params: {
-                      componentType?: string;
-                      seriesType?: string;
-                      seriesName?: string;
-                    }) => {
-                      if (
-                        params.componentType !== 'series' ||
-                        params.seriesType !== 'line' ||
-                        !params.seriesName
-                      ) {
-                        return;
-                      }
-                      if (shareHoverTimerRef.current) {
-                        clearTimeout(shareHoverTimerRef.current);
-                        shareHoverTimerRef.current = null;
-                      }
-                      hoveredShareSeriesRef.current = params.seriesName;
-                    },
-                    mouseout: (params: {
-                      componentType?: string;
-                      seriesType?: string;
-                    }) => {
-                      if (params.componentType !== 'series') return;
-                      // 延迟清空：在同一系列相邻数据点之间移动时不会闪回仅日期
-                      if (shareHoverTimerRef.current) {
-                        clearTimeout(shareHoverTimerRef.current);
-                      }
-                      shareHoverTimerRef.current = setTimeout(() => {
-                        shareHoverTimerRef.current = null;
-                        hoveredShareSeriesRef.current = null;
-                      }, 80);
-                    },
-                    globalout: () => {
-                      if (shareHoverTimerRef.current) {
-                        clearTimeout(shareHoverTimerRef.current);
-                        shareHoverTimerRef.current = null;
-                      }
-                      hoveredShareSeriesRef.current = null;
-                    },
-                  }}
                 />
               )}
             </CardContent>

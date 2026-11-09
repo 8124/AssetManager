@@ -36,14 +36,55 @@ export interface IExchangeRate {
 }
 
 /**
- * 按日期聚合的资产快照：
+ * 按日期聚合的资产快照（柱状图 / 折线图 / 历史数据的唯一数据源）
  * - categories：该日期下各资产类别的人民币金额汇总
  * - tolamount：该日期总资产金额（人民币）
+ *
+ * 约定：每个日期只有一条快照。今天的快照由「当前持仓记录」自动汇总生成，
+ * 历史快照一经生成即冻结，只能在「记录条数」弹窗里手动修改。
  */
 export interface IRecordLineEntry {
   date: string;
   categories: Record<string, number>;
   tolamount: number;
+}
+
+/** 今天（本地时区）的 YYYY-MM-DD */
+export function todayString(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * 汇总全部资产记录（记录代表「当前持仓清单」，不分录入日期），
+ * 生成指定日期的快照。无记录时返回 null。
+ *
+ * 只用于生成「今天」的快照 —— 历史快照是独立存量的数据，
+ * 绝不能再用当前记录去回算，否则历史数值会被今天的持仓覆盖。
+ */
+export function summarizeRecords(
+  records: IAssetRecord[],
+  date: string,
+): IRecordLineEntry | null {
+  if (records.length === 0) return null;
+  const categories: Record<string, number> = {};
+  for (const r of records) {
+    if (!r.category) continue;
+    categories[r.category] = +((categories[r.category] ?? 0) + r.amountCNY).toFixed(2);
+  }
+  if (Object.keys(categories).length === 0) return null;
+  const tolamount = +Object.values(categories)
+    .reduce((s, v) => s + v, 0)
+    .toFixed(2);
+  return { date, categories, tolamount };
+}
+
+/** 递增排序并去重（同日期保留后者），保证快照列表顺序稳定 */
+export function sortRecordLine(line: IRecordLineEntry[]): IRecordLineEntry[] {
+  const map = new Map<string, IRecordLineEntry>();
+  for (const entry of line) map.set(entry.date, entry);
+  return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export const STORAGE_KEYS = {
@@ -127,6 +168,16 @@ export function deriveCategories(records: Array<{ category: string }>): string[]
     }
   }
   return result;
+}
+
+/** 首次使用时的备选类别（仅用于表单下拉，不参与统计） */
+export const DEFAULT_ASSET_CATEGORIES = ['现金', '股票', '基金', '房产'];
+
+/** 表单可选项：已有类别在前，默认类别补齐在后 */
+export function buildCategoryOptions(records: Array<{ category: string }>): string[] {
+  const existing = deriveCategories(records);
+  const extras = DEFAULT_ASSET_CATEGORIES.filter((c) => !existing.includes(c));
+  return [...existing, ...extras];
 }
 
 /**

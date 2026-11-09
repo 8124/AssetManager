@@ -55,7 +55,7 @@ export default function OverviewSection({
               className="bg-[#007AFF] hover:bg-[#0066CC] shadow-sm"
             >
               <Plus className="size-3.5 mr-1.5" />
-              新增资产
+              记一笔
             </Button>
           </div>
         </div>
